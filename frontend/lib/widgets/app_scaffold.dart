@@ -271,7 +271,7 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                 },
               ),
             );
-          }).toList(),
+          }),
           if (_isPwaInstallable) ...[
             const Divider(color: Color(0xFF334155), height: 16),
             Padding(

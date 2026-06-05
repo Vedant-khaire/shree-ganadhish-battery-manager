@@ -5,13 +5,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_PATH = BASE_DIR / ".env"
 
-# Explicit dotenv load
-load_dotenv(dotenv_path=ENV_PATH)
+# Load dotenv if the file exists (for local development)
+if ENV_PATH.exists():
+    load_dotenv(dotenv_path=ENV_PATH)
 
-if not ENV_PATH.exists():
-    raise ValueError(
-        ".env file missing. Create backend/.env before starting server."
-    )
 
 
 class Settings(BaseSettings):
