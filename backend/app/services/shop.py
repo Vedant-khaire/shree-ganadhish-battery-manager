@@ -219,8 +219,37 @@ def create_shop(db: Client, data: ShopCreate, device: str = "desktop") -> dict:
         )
 
     created = ShopResponse.from_row(result.data[0])
+    
+    # Handle Old Udhari (Initial outstanding balance)
+    initial_udhari = getattr(data, "initial_udhari", 0.0) or 0.0
+    if initial_udhari > 0.0:
+        try:
+            pay_res = db.table("shop_payments").insert({
+                "shop_id": created.id,
+                "total_amount": initial_udhari,
+                "paid_amount": 0.0,
+                "pending_amount": initial_udhari,
+                "is_settled": False
+            }).execute()
+            
+            if pay_res.data:
+                payment_id = pay_res.data[0]["id"]
+                db.table("shop_payment_transactions").insert({
+                    "payment_id": payment_id,
+                    "shop_id": created.id,
+                    "transaction_type": "ADDITION",
+                    "amount": initial_udhari,
+                    "notes": "Old Udhaari / Opening Balance"
+                }).execute()
+                
+                created.pending_udhari = initial_udhari
+        except Exception as e:
+            # Fallback for safety - do not crash shop creation if payment setup fails
+            pass
+
     _log(db, f"SHOP_CREATED: {created.shop_name} ({created.mobile})", device)
     return {"message": "Shop profile created successfully", "data": created}
+
 
 
 def update_shop(db: Client, shop_id: str, data: ShopUpdate, device: str = "desktop") -> dict:

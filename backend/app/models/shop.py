@@ -7,6 +7,8 @@ class ShopCreate(BaseModel):
     owner_name: str
     mobile: str
     address: Optional[str] = None
+    initial_udhari: Optional[float] = 0.0
+
 
     @field_validator("shop_name", "owner_name", "mobile")
     @classmethod

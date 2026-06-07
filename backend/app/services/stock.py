@@ -53,7 +53,8 @@ def get_all_stock(
     if search:
         term = search.strip().replace(",", "").replace("%", "").upper()
         if term:
-            query = query.ilike("model_name", f"%{term}%")
+            query = query.or_(f"model_name.ilike.%{term}%")
+
 
     # Fetch all data to perform low-stock threshold comparison if low_stock filter is enabled
     # Since Supabase Postgrest doesn't allow column-to-column comparison natively (e.g. quantity <= low_stock_threshold),

@@ -811,6 +811,19 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
           onPressed: () => _showAddPurchaseDialog(context),
         ),
         const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: () => _showDeleteConfirmDialog(context, shop.shopName),
+          icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+          label: const Text('Delete Shop', style: TextStyle(color: Colors.red)),
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: Colors.red),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
         PopupMenuButton<String>(
           icon: const Icon(Icons.more_vert_rounded),
           onSelected: (val) {

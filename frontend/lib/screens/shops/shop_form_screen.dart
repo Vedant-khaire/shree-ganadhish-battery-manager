@@ -29,6 +29,7 @@ class _ShopFormScreenState extends ConsumerState<ShopFormScreen> {
   final _ownerNameController = TextEditingController();
   final _mobileController = TextEditingController();
   final _addressController = TextEditingController();
+  final _initialUdhariController = TextEditingController();
 
   bool _isPrefilled = false;
   bool _isSubmitting = false;
@@ -42,6 +43,7 @@ class _ShopFormScreenState extends ConsumerState<ShopFormScreen> {
     _ownerNameController.dispose();
     _mobileController.dispose();
     _addressController.dispose();
+    _initialUdhariController.dispose();
     super.dispose();
   }
 
@@ -63,12 +65,22 @@ class _ShopFormScreenState extends ConsumerState<ShopFormScreen> {
       _errorMessage = null;
     });
 
-    final payload = {
+    final Map<String, dynamic> payload = {
       'shop_name': _shopNameController.text.trim(),
       'owner_name': _ownerNameController.text.trim(),
       'mobile': _mobileController.text.trim(),
       'address': _addressController.text.trim().isEmpty ? null : _addressController.text.trim(),
     };
+
+    if (!isEdit) {
+      final udhariStr = _initialUdhariController.text.trim();
+      if (udhariStr.isNotEmpty) {
+        final double? initialUdhari = double.tryParse(udhariStr);
+        if (initialUdhari != null && initialUdhari > 0) {
+          payload['initial_udhari'] = initialUdhari;
+        }
+      }
+    }
 
     try {
       final ops = ref.read(shopOperationsProvider);
@@ -299,7 +311,28 @@ class _ShopFormScreenState extends ConsumerState<ShopFormScreen> {
                             prefixIcon: Icons.location_on_rounded,
                             maxLines: 3,
                           ),
-                          const SizedBox(height: 32),
+                          const SizedBox(height: 20),
+
+                          if (!isEdit) ...[
+                            AppInput(
+                              controller: _initialUdhariController,
+                              labelText: 'Old Udhaari / Opening Balance (Optional)',
+                              hintText: 'Enter initial outstanding balance, if any',
+                              prefixIcon: Icons.currency_rupee_rounded,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              validator: (v) {
+                                if (v != null && v.trim().isNotEmpty) {
+                                  final val = double.tryParse(v.trim());
+                                  if (val == null || val < 0) {
+                                    return 'Please enter a valid positive amount';
+                                  }
+                                }
+                                return null;
+                              },
+                            ),
+                            const SizedBox(height: 12),
+                          ],
+                          const SizedBox(height: 20),
 
                           Row(
                             mainAxisAlignment: MainAxisAlignment.end,
