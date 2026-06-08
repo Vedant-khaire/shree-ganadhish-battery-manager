@@ -12,18 +12,17 @@ from app.models.reminder import ReminderCreate, ReminderUpdate, ReminderResponse
 
 def _log(db: Client, action: str, device: str = "system") -> None:
     try:
-        db.table("activity_logs").insert({"action": action, "device": device}).execute()
+        safe_execute(db.table("activity_logs").insert({"action": action, "device": device}))
     except Exception:
         pass
 
 
 def _require_reminder(db: Client, reminder_id: str) -> dict:
     result = (
-        db.table("service_reminders")
+        safe_execute(db.table("service_reminders")
         .select("*")
         .eq("id", reminder_id)
-        .single()
-        .execute()
+        .single())
     )
     if not result.data:
         raise HTTPException(
@@ -59,7 +58,7 @@ def populate_rendered_templates(db: Client, rows: list) -> list:
     payments_map = {}
     if pay_ids:
         try:
-            pay_res = db.table("payments").select("id, pending_amount").in_("id", pay_ids).execute()
+            pay_res = safe_execute(db.table("payments").select("id, pending_amount").in_("id", pay_ids))
             if pay_res.data:
                 payments_map = {p["id"]: str(p["pending_amount"]) for p in pay_res.data}
         except Exception:
@@ -108,16 +107,16 @@ def update_reminder_statuses(db: Client) -> None:
     today = date.today().isoformat()
 
     # 1. Any uncompleted reminder where reminder_date > today -> UPCOMING
-    db.table("service_reminders").update({"reminder_status": "UPCOMING"}).eq("is_completed", False).gt("reminder_date", today).execute()
+    safe_execute(db.table("service_reminders").update({"reminder_status": "UPCOMING"}).eq("is_completed", False).gt("reminder_date", today))
 
     # 2. Any uncompleted reminder where reminder_date = today -> DUE
-    db.table("service_reminders").update({"reminder_status": "DUE"}).eq("is_completed", False).eq("reminder_date", today).execute()
+    safe_execute(db.table("service_reminders").update({"reminder_status": "DUE"}).eq("is_completed", False).eq("reminder_date", today))
 
     # 3. Any uncompleted reminder where reminder_date < today and warranty has expired -> EXPIRED
-    db.table("service_reminders").update({"reminder_status": "EXPIRED"}).eq("is_completed", False).lt("reminder_date", today).lt("warranty_expiry", today).execute()
+    safe_execute(db.table("service_reminders").update({"reminder_status": "EXPIRED"}).eq("is_completed", False).lt("reminder_date", today).lt("warranty_expiry", today))
 
     # 4. Any uncompleted reminder where reminder_date < today and warranty is not expired (or null) -> OVERDUE
-    db.table("service_reminders").update({"reminder_status": "OVERDUE"}).eq("is_completed", False).lt("reminder_date", today).gte("warranty_expiry", today).execute()
+    safe_execute(db.table("service_reminders").update({"reminder_status": "OVERDUE"}).eq("is_completed", False).lt("reminder_date", today).gte("warranty_expiry", today))
 
 
 # ---------------------------------------------------------------------------
@@ -209,7 +208,7 @@ def schedule_reminders_for_battery(db: Client, battery: dict, customer: dict) ->
             "whatsapp_delivery_status": "PENDING"
         }
 
-        res = db.table("service_reminders").insert(payload).execute()
+        res = safe_execute(db.table("service_reminders").insert(payload))
         if res.data:
             inserted_records.append(res.data[0])
 
@@ -265,10 +264,9 @@ def get_all_reminders(
 
     offset = (page - 1) * limit
     result = (
-        query
+        safe_execute(query
         .order("reminder_date", desc=False)
-        .range(offset, offset + limit - 1)
-        .execute()
+        .range(offset, offset + limit - 1))
     )
 
     populated_rows = populate_rendered_templates(db, result.data or [])
@@ -294,19 +292,17 @@ def get_reminder_stats(db: Client) -> dict:
         pass
 
     res_uncompleted = (
-        db.table("service_reminders")
+        safe_execute(db.table("service_reminders")
         .select("reminder_type, reminder_status")
         .eq("is_completed", False)
-        .eq("is_archived", False)
-        .execute()
+        .eq("is_archived", False))
     )
 
     res_completed = (
-        db.table("service_reminders")
+        safe_execute(db.table("service_reminders")
         .select("id", count="exact")
         .eq("is_completed", True)
-        .eq("is_archived", False)
-        .execute()
+        .eq("is_archived", False))
     )
     completed_count = res_completed.count or 0
 
@@ -372,7 +368,7 @@ def create_manual_reminder(db: Client, data: ReminderCreate, device: str = "desk
     payload["is_archived"] = False
     payload["whatsapp_template"] = None  # Force empty to ensure render-at-dispatch
 
-    result = db.table("service_reminders").insert(payload).execute()
+    result = safe_execute(db.table("service_reminders").insert(payload))
     if not result.data:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -400,7 +396,7 @@ def update_reminder(db: Client, reminder_id: str, data: ReminderUpdate, device: 
     if "sent_at" in updates and hasattr(updates["sent_at"], "isoformat"):
         updates["sent_at"] = updates["sent_at"].isoformat()
 
-    result = db.table("service_reminders").update(updates).eq("id", reminder_id).execute()
+    result = safe_execute(db.table("service_reminders").update(updates).eq("id", reminder_id))
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to update reminder")
 
@@ -452,18 +448,18 @@ def update_reminder(db: Client, reminder_id: str, data: ReminderUpdate, device: 
 
 def delete_reminder_permanently(db: Client, reminder_id: str, device: str = "desktop") -> dict:
     _require_reminder(db, reminder_id)
-    db.table("service_reminders").delete().eq("id", reminder_id).execute()
+    safe_execute(db.table("service_reminders").delete().eq("id", reminder_id))
     _log(db, f"REMINDER_DELETED: {reminder_id}", device)
     return {"message": "Reminder permanently deleted successfully"}
 
 
 def delete_all_reminders(db: Client, reminder_type: str = "", device: str = "desktop") -> dict:
     if reminder_type and reminder_type != "ALL":
-        db.table("service_reminders").delete().eq("reminder_type", reminder_type).execute()
+        safe_execute(db.table("service_reminders").delete().eq("reminder_type", reminder_type))
         message = f"All {reminder_type} reminders permanently deleted successfully"
         _log(db, f"ALL_REMINDERS_DELETED_BY_TYPE: {reminder_type}", device)
     else:
-        db.table("service_reminders").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+        safe_execute(db.table("service_reminders").delete().neq("id", "00000000-0000-0000-0000-000000000000"))
         message = "All reminders permanently deleted successfully"
         _log(db, "ALL_REMINDERS_DELETED", device)
     return {"message": message}
@@ -488,24 +484,23 @@ def process_daily_reminders_batch(db: Client) -> dict:
 
 def schedule_udhari_reminders(db: Client, payment_id: str) -> None:
     """Schedules/regenerates Udhari collection reminders with empty templates (render-at-dispatch)."""
-    pay_res = db.table("payments").select("*, customers(name, mobile)").eq("id", payment_id).single().execute()
+    pay_res = safe_execute(db.table("payments").select("*, customers(name, mobile)").eq("id", payment_id).single())
     if not pay_res.data:
         return
     payment = pay_res.data
 
     if float(payment.get("pending_amount") or 0.0) <= 0 or payment.get("is_settled"):
-        db.table("service_reminders").update({
+        safe_execute(db.table("service_reminders").update({
             "is_completed": True,
             "notes": "Auto-completed: Payment settled"
-        }).eq("linked_payment_id", payment_id).eq("is_completed", False).execute()
+        }).eq("linked_payment_id", payment_id).eq("is_completed", False))
         return
 
-    existing_res = db.table("service_reminders")\
+    existing_res = safe_execute(db.table("service_reminders")\
         .select("reminder_date")\
         .eq("linked_payment_id", payment_id)\
         .eq("is_completed", False)\
-        .order("reminder_date", desc=True)\
-        .execute()
+        .order("reminder_date", desc=True))
 
     uncompleted_reminders = existing_res.data or []
     uncompleted_count = len(uncompleted_reminders)
@@ -516,12 +511,11 @@ def schedule_udhari_reminders(db: Client, payment_id: str) -> None:
     created_at_str = payment.get("created_at") or date.today().isoformat()
     created_at_date = date.fromisoformat(created_at_str[:10])
 
-    all_rem_res = db.table("service_reminders")\
+    all_rem_res = safe_execute(db.table("service_reminders")\
         .select("reminder_date")\
         .eq("linked_payment_id", payment_id)\
         .order("reminder_date", desc=True)\
-        .limit(1)\
-        .execute()
+        .limit(1))
 
     if all_rem_res.data:
         start_date = date.fromisoformat(all_rem_res.data[0]["reminder_date"])
@@ -558,4 +552,4 @@ def schedule_udhari_reminders(db: Client, payment_id: str) -> None:
             "whatsapp_delivery_status": "PENDING"
         }
 
-        db.table("service_reminders").insert(payload).execute()
+        safe_execute(db.table("service_reminders").insert(payload))

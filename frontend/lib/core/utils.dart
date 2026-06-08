@@ -77,26 +77,48 @@ class ErrorParser {
   static String parse(dynamic error) {
     if (error is DioException) {
       if (error.message != null &&
-          (error.message!.contains('Connection failed') ||
-           error.message!.contains('offline') ||
-           error.message!.contains('offline.'))) {
+          (error.message!.contains('Server is starting') ||
+           error.message!.contains('waking up') ||
+           error.message!.contains('Please wait'))) {
         return error.message!;
       }
       
+      final errorStr = error.toString().toLowerCase();
+      final errorObjStr = error.error?.toString().toLowerCase() ?? '';
+
+      final isTimeout = error.type == DioExceptionType.connectionTimeout ||
+          error.type == DioExceptionType.sendTimeout ||
+          error.type == DioExceptionType.receiveTimeout ||
+          errorStr.contains('timeout') ||
+          errorObjStr.contains('timeout');
+
+      final isConnection = error.type == DioExceptionType.connectionError ||
+          errorStr.contains('socketexception') ||
+          errorObjStr.contains('socketexception') ||
+          errorObjStr.contains('xmlhttprequest') ||
+          errorObjStr.contains('networkerror');
+
+      if (isTimeout) {
+        return 'Server is starting. This may take up to 60 seconds because the backend is waking up. Please wait...';
+      }
+      
+      if (isConnection) {
+        if (errorObjStr.contains('networkerror') || errorStr.contains('networkerror') || errorStr.contains('failed to host lookup')) {
+          return 'Internet connection is offline. Please check your network.';
+        }
+        return 'Server is starting. This may take up to 60 seconds because the backend is waking up. Please wait...';
+      }
+      
       switch (error.type) {
-        case DioExceptionType.connectionTimeout:
-        case DioExceptionType.sendTimeout:
-        case DioExceptionType.receiveTimeout:
-          return 'Connection timed out. Please verify your internet connection and try again.';
-        case DioExceptionType.connectionError:
-        case DioExceptionType.unknown:
-          return 'Connection failed. The server appears to be offline.';
         case DioExceptionType.badResponse:
           final response = error.response;
           if (response != null) {
             final statusCode = response.statusCode;
             if (statusCode == 401) {
               return 'Session expired. Please log in again.';
+            }
+            if (statusCode != null && statusCode >= 500) {
+              return 'Internal server error (HTTP $statusCode). Please contact support.';
             }
             
             var data = response.data;

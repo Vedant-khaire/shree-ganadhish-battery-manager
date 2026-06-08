@@ -13,6 +13,8 @@ import '../../widgets/toast_helper.dart';
 import '../../core/theme.dart';
 import '../../core/api_client.dart';
 import '../../core/download_helper.dart';
+import '../../core/utils.dart';
+import '../../widgets/loading_skeleton.dart';
 
 class ShopDetailScreen extends ConsumerStatefulWidget {
   final String shopId;
@@ -996,8 +998,83 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
             ),
           );
         },
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (err, st) => Center(child: Text('Error loading shop: $err', style: const TextStyle(color: Colors.red))),
+        loading: () => Scaffold(
+          appBar: AppBar(title: const Text('Loading Shop...')),
+          body: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const LoadingSkeleton(width: double.infinity, height: 160),
+                const SizedBox(height: 24),
+                LoadingSkeleton.table(rows: 6),
+              ],
+            ),
+          ),
+        ),
+        error: (err, st) {
+          final errMsg = ErrorParser.parse(err);
+          return Scaffold(
+            appBar: AppBar(title: const Text('Error')),
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  child: Container(
+                    constraints: const BoxConstraints(maxWidth: 450),
+                    padding: const EdgeInsets.all(32),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.error_outline_rounded,
+                          size: 60,
+                          color: Colors.red,
+                        ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'Unable to load shop details',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          errMsg,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey.shade600,
+                            height: 1.4,
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            ref.invalidate(shopDetailsProvider(widget.shopId));
+                          },
+                          icon: const Icon(Icons.refresh_rounded),
+                          label: const Text('Retry'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.primaryColor,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }

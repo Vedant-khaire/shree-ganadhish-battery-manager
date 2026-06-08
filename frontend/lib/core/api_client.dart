@@ -26,8 +26,9 @@ class ApiClient {
       : dio = Dio(
           BaseOptions(
             baseUrl: AppConstants.apiBaseUrl,
-            connectTimeout: const Duration(seconds: 10),
-            receiveTimeout: const Duration(seconds: 10),
+            connectTimeout: const Duration(seconds: 60),
+            receiveTimeout: const Duration(seconds: 60),
+            sendTimeout: const Duration(seconds: 60),
             headers: {
               'Content-Type': 'application/json',
               'Accept': 'application/json',
@@ -37,6 +38,7 @@ class ApiClient {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          AppLogger.log('[API REQUEST] ${options.method} ${options.path}');
           final token = await _authStorage.getToken();
           if (token != null && token.trim().isNotEmpty) {
             options.headers['Authorization'] = 'Bearer $token';
@@ -45,7 +47,13 @@ class ApiClient {
           }
           return handler.next(options);
         },
+        onResponse: (response, handler) {
+          AppLogger.log('[API SUCCESS] ${response.requestOptions.method} ${response.requestOptions.path}');
+          return handler.next(response);
+        },
         onError: (DioException error, handler) async {
+          AppLogger.log('[API ERROR] ${error.requestOptions.method} ${error.requestOptions.path} - Type: ${error.type}, Message: ${error.message}, Error: ${error.error}');
+          
           if (error.response?.statusCode == 401) {
             if (!_isLoggingOut) {
               _isLoggingOut = true;
@@ -68,11 +76,10 @@ class ApiClient {
             return handler.next(cleanError);
           }
 
-          // Check if server is unreachable and rewrite error with a friendly message
           final errorStr = error.toString().toLowerCase();
           final errorObjStr = error.error?.toString().toLowerCase() ?? '';
           
-          final isOffline = error.type == DioExceptionType.connectionTimeout ||
+          final isRetryable = (error.type == DioExceptionType.connectionTimeout ||
               error.type == DioExceptionType.sendTimeout ||
               error.type == DioExceptionType.receiveTimeout ||
               error.type == DioExceptionType.connectionError ||
@@ -81,11 +88,40 @@ class ApiClient {
               errorObjStr.contains('socketexception') ||
               errorObjStr.contains('timeout') ||
               errorObjStr.contains('xmlhttprequest') ||
-              errorObjStr.contains('networkerror');
+              errorObjStr.contains('networkerror')) &&
+              error.requestOptions.extra['skip_retry'] != true;
 
-          if (isOffline) {
+          if (isRetryable) {
+            int retryCount = error.requestOptions.extra['retry_count'] ?? 0;
+            if (retryCount < 3) {
+              retryCount++;
+              error.requestOptions.extra['retry_count'] = retryCount;
+              
+              int delaySeconds = 2;
+              if (retryCount == 2) {
+                delaySeconds = 5;
+              } else if (retryCount == 3) {
+                delaySeconds = 10;
+              }
+              
+              AppLogger.log('[API RETRY] Attempt $retryCount of 3 for path ${error.requestOptions.path} in ${delaySeconds}s');
+              await Future.delayed(Duration(seconds: delaySeconds));
+              
+              try {
+                // Re-execute request
+                final response = await dio.fetch(error.requestOptions);
+                return handler.resolve(response);
+              } on DioException catch (retryError) {
+                // Continue chain (might trigger another retry if retryCount < 3)
+                return handler.next(retryError);
+              } catch (e) {
+                return handler.next(error);
+              }
+            }
+            
+            // If we ran out of retries, map to a friendly "waking up" message
             final friendlyError = error.copyWith(
-              message: 'Server is offline. Please try again.',
+              message: 'Server is starting.\n\nThis may take up to 60 seconds because the backend is waking up.\n\nPlease wait...',
             );
             return handler.next(friendlyError);
           }

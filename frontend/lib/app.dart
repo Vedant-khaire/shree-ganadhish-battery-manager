@@ -38,8 +38,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       final currentPath = state.uri.path;
       final isLoggedIn = authState.isAuthenticated;
 
-      // While authentication is initializing, stay on splash screen
-      if (authState.isLoading) {
+      // While authentication is initializing or backend is warming up, stay on splash screen
+      if (authState.isLoading || authState.isWarmingUp) {
         if (currentPath != '/splash') {
           return '/splash';
         }

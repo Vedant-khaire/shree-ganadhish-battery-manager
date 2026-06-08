@@ -82,6 +82,17 @@ def health_v1():
     return _health_payload()
 
 
+from fastapi.responses import JSONResponse
+from app.database import DatabaseUnavailableException
+
+@app.exception_handler(DatabaseUnavailableException)
+async def database_unavailable_exception_handler(request, exc: DatabaseUnavailableException):
+    return JSONResponse(
+        status_code=503,
+        content={"detail": exc.message},
+    )
+
+
 @app.on_event("startup")
 def startup_event():
     try:

@@ -2,6 +2,7 @@ import datetime
 from datetime import date, timedelta
 from typing import Optional, List, Dict
 from supabase import Client
+from app.database import safe_execute
 
 
 def _parse_date(val) -> date:
@@ -47,7 +48,7 @@ def get_dashboard_stats(
 
     # 1. Fetch Lightweight Core Data
     # A. Customers (active only)
-    cust_res = db.table("customers").select("id, name, mobile, area, purchase_type, created_at, scrap_battery_pending, scrap_expected_value, scrap_received_value, scrap_received_date").eq("is_archived", False).execute()
+    cust_res = safe_execute(db.table("customers").select("id, name, mobile, area, purchase_type, created_at, scrap_battery_pending, scrap_expected_value, scrap_received_value, scrap_received_date").eq("is_archived", False))
     customers = cust_res.data or []
 
     # Apply customer filters first
@@ -58,7 +59,7 @@ def get_dashboard_stats(
     cust_map = {str(c["id"]): c for c in customers}
 
     # B. Batteries (active only)
-    batt_res = db.table("batteries").select("id, customer_id, battery_type, model_number, sale_date, warranty_expiry, is_followed_up").eq("is_archived", False).execute()
+    batt_res = safe_execute(db.table("batteries").select("id, customer_id, battery_type, model_number, sale_date, warranty_expiry, is_followed_up").eq("is_archived", False))
     batteries = batt_res.data or []
 
     # Filter batteries by customer scope
@@ -72,7 +73,7 @@ def get_dashboard_stats(
     batt_map = {str(b["id"]): b for b in batteries}
 
     # C. Payments (active only)
-    pay_res = db.table("payments").select("id, customer_id, battery_id, total_amount, paid_amount, pending_amount, is_settled, created_at").eq("is_archived", False).execute()
+    pay_res = safe_execute(db.table("payments").select("id, customer_id, battery_id, total_amount, paid_amount, pending_amount, is_settled, created_at").eq("is_archived", False))
     payments = pay_res.data or []
 
     # Filter payments by customer and battery scope
@@ -82,7 +83,7 @@ def get_dashboard_stats(
         payments = [p for p in payments if str(p.get("battery_id")) in batt_ids]
 
     # D. Stock (active only)
-    stock_res = db.table("battery_stock").select("model_name, battery_type, quantity, low_stock_threshold").eq("is_archived", False).execute()
+    stock_res = safe_execute(db.table("battery_stock").select("model_name, battery_type, quantity, low_stock_threshold").eq("is_archived", False))
     stock_items = stock_res.data or []
     # Filter stock items if vehicle_type filter is active
     if vehicle_type:
@@ -93,13 +94,13 @@ def get_dashboard_stats(
     shop_purchases_data = []
     shop_payments_data = []
     try:
-        shops_res = db.table("shops").select("id, shop_name, owner_name, mobile, created_at").eq("is_archived", False).execute()
+        shops_res = safe_execute(db.table("shops").select("id, shop_name, owner_name, mobile, created_at").eq("is_archived", False))
         shops_data = shops_res.data or []
         
-        pur_res = db.table("shop_purchases").select("id, shop_id, battery_model, quantity, amount, udhari_amount, purchase_date").execute()
+        pur_res = safe_execute(db.table("shop_purchases").select("id, shop_id, battery_model, quantity, amount, udhari_amount, purchase_date"))
         shop_purchases_data = pur_res.data or []
         
-        pay_res = db.table("shop_payments").select("id, shop_id, total_amount, paid_amount, pending_amount, is_settled").execute()
+        pay_res = safe_execute(db.table("shop_payments").select("id, shop_id, total_amount, paid_amount, pending_amount, is_settled"))
         shop_payments_data = pay_res.data or []
     except Exception:
         pass
@@ -285,11 +286,10 @@ def get_dashboard_stats(
 
     # D. Service Reminders count
     try:
-        rem_res = db.table("service_reminders")\
+        rem_res = safe_execute(db.table("service_reminders")\
             .select("id, reminder_type, reminder_date, linked_payment_id, reminder_category, reminder_status")\
             .eq("is_completed", False)\
-            .eq("is_archived", False)\
-            .execute()
+            .eq("is_archived", False))
         reminders_list = rem_res.data or []
     except Exception:
         reminders_list = []
@@ -341,11 +341,10 @@ def get_dashboard_stats(
 
     # E. Fetch 10 most recent activity logs for dashboard timeline
     try:
-        activity_res = db.table("activity_logs")\
+        activity_res = safe_execute(db.table("activity_logs")\
             .select("action, created_at")\
             .order("created_at", desc=True)\
-            .range(0, 9)\
-            .execute()
+            .range(0, 9))
         recent_activities = activity_res.data or []
     except Exception:
         recent_activities = []

@@ -340,7 +340,66 @@ class ShopListScreen extends ConsumerWidget {
                     );
                   },
                   loading: () => LoadingSkeleton.table(rows: 8),
-                  error: (err, st) => Center(child: Text('Error loading shops list: $err', style: const TextStyle(color: Colors.red))),
+                  error: (err, st) {
+                    final errMsg = ErrorParser.parse(err);
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(24.0),
+                        child: Card(
+                          elevation: 4,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 450),
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.error_outline_rounded,
+                                  size: 60,
+                                  color: Colors.red,
+                                ),
+                                const SizedBox(height: 20),
+                                const Text(
+                                  'Unable to load shops data',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  errMsg,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Color(0xFF64748B),
+                                    height: 1.4,
+                                  ),
+                                ),
+                                const SizedBox(height: 24),
+                                ElevatedButton.icon(
+                                  onPressed: () {
+                                    ref.invalidate(shopListProvider);
+                                  },
+                                  icon: const Icon(Icons.refresh_rounded),
+                                  label: const Text('Retry Loading'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppTheme.primaryColor,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
                 ),
               ),
             ),

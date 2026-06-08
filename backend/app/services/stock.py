@@ -10,18 +10,17 @@ from app.models.stock import StockCreate, StockUpdate, StockResponse
 
 def _log(db: Client, action: str, device: str) -> None:
     try:
-        db.table("activity_logs").insert({"action": action, "device": device}).execute()
+        safe_execute(db.table("activity_logs").insert({"action": action, "device": device}))
     except Exception:
         pass
 
 
 def _require_stock(db: Client, stock_id: str) -> dict:
     result = (
-        db.table("battery_stock")
+        safe_execute(db.table("battery_stock")
         .select("*")
         .eq("id", stock_id)
-        .single()
-        .execute()
+        .single())
     )
     if not result.data:
         raise HTTPException(
@@ -60,7 +59,7 @@ def get_all_stock(
     # Since Supabase Postgrest doesn't allow column-to-column comparison natively (e.g. quantity <= low_stock_threshold),
     # we can retrieve and filter locally, or perform a manual filter if the dataset is small.
     # Because it is an MVP and datasets are small, doing local filtering is robust and simple.
-    result = query.execute()
+    result = safe_execute(query)
     data = result.data or []
     
     if low_stock:
@@ -97,11 +96,10 @@ def create_stock_item(
 
     # Check for existing duplicate entry
     existing = (
-        db.table("battery_stock")
+        safe_execute(db.table("battery_stock")
         .select("*")
         .eq("model_name", model_name)
-        .eq("battery_type", battery_type)
-        .execute()
+        .eq("battery_type", battery_type))
     )
 
     if existing.data:
@@ -118,7 +116,7 @@ def create_stock_item(
         "is_archived": False,
     }
 
-    result = db.table("battery_stock").insert(payload).execute()
+    result = safe_execute(db.table("battery_stock").insert(payload))
     if not result.data:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -147,12 +145,11 @@ def update_stock_item(
         battery_type = updates.get("battery_type", existing_row["battery_type"]).strip().upper()
 
         duplicate = (
-            db.table("battery_stock")
+            safe_execute(db.table("battery_stock")
             .select("*")
             .eq("model_name", model_name)
             .eq("battery_type", battery_type)
-            .neq("id", stock_id)
-            .execute()
+            .neq("id", stock_id))
         )
         if duplicate.data:
             raise HTTPException(
@@ -165,7 +162,7 @@ def update_stock_item(
 
     updates["updated_at"] = "now()"
 
-    result = db.table("battery_stock").update(updates).eq("id", stock_id).execute()
+    result = safe_execute(db.table("battery_stock").update(updates).eq("id", stock_id))
     if not result.data:
         raise HTTPException(status_code=500, detail="Failed to update stock item")
 
@@ -182,10 +179,9 @@ def increase_stock_quantity(
     new_quantity = row["quantity"] + amount
 
     result = (
-        db.table("battery_stock")
+        safe_execute(db.table("battery_stock")
         .update({"quantity": new_quantity, "updated_at": "now()"})
-        .eq("id", stock_id)
-        .execute()
+        .eq("id", stock_id))
     )
 
     if not result.data:
@@ -210,10 +206,9 @@ def decrease_stock_quantity(
         )
 
     result = (
-        db.table("battery_stock")
+        safe_execute(db.table("battery_stock")
         .update({"quantity": new_quantity, "updated_at": "now()"})
-        .eq("id", stock_id)
-        .execute()
+        .eq("id", stock_id))
     )
 
     if not result.data:
@@ -226,14 +221,14 @@ def decrease_stock_quantity(
 
 def archive_stock_item(db: Client, stock_id: str, device: str = "desktop") -> dict:
     row = _require_stock(db, stock_id)
-    db.table("battery_stock").update({"is_archived": True, "updated_at": "now()"}).eq("id", stock_id).execute()
+    safe_execute(db.table("battery_stock").update({"is_archived": True, "updated_at": "now()"}).eq("id", stock_id))
     _log(db, f"STOCK_ARCHIVED: {row['model_name']}", device)
     return {"message": "Stock item archived successfully"}
 
 
 def restore_stock_item(db: Client, stock_id: str, device: str = "desktop") -> dict:
     row = _require_stock(db, stock_id)
-    db.table("battery_stock").update({"is_archived": False, "updated_at": "now()"}).eq("id", stock_id).execute()
+    safe_execute(db.table("battery_stock").update({"is_archived": False, "updated_at": "now()"}).eq("id", stock_id))
     _log(db, f"STOCK_RESTORED: {row['model_name']}", device)
     return {"message": "Stock item restored successfully"}
 
@@ -241,7 +236,7 @@ def restore_stock_item(db: Client, stock_id: str, device: str = "desktop") -> di
 def delete_stock_permanently(db: Client, stock_id: str, device: str = "desktop") -> dict:
     """Hard-delete stock item."""
     row = _require_stock(db, stock_id)
-    db.table("battery_stock").delete().eq("id", stock_id).execute()
+    safe_execute(db.table("battery_stock").delete().eq("id", stock_id))
     _log(db, f"STOCK_PERMANENTLY_DELETED: {row['model_name']}", device)
     return {"message": "Stock item permanently deleted successfully"}
 
@@ -257,10 +252,9 @@ def reconcile_stock_from_sales(db: Client) -> dict:
     """
     # 1. Fetch active customer battery registrations
     sales = (
-        db.table("batteries")
+        safe_execute(db.table("batteries")
         .select("model_number, battery_type")
-        .eq("is_archived", False)
-        .execute()
+        .eq("is_archived", False))
     )
 
     data = sales.data or []

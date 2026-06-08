@@ -11,9 +11,9 @@ from app.models.customer import CustomerCreate, CustomerUpdate, CustomerResponse
 def _log(db: Client, action: str, device: str) -> None:
     """Fire-and-forget activity log — never raises."""
     try:
-        db.table("activity_logs").insert(
+        safe_execute(db.table("activity_logs").insert(
             {"action": action, "device": device}
-        ).execute()
+        ))
     except Exception:
         pass
 
@@ -29,11 +29,10 @@ def _sanitize_search(term: str) -> str:
 def _require_customer(db: Client, customer_id: str) -> dict:
     """Fetch a non-archived customer by ID or raise 404."""
     result = (
-        db.table("customers")
+        safe_execute(db.table("customers")
         .select("*")
         .eq("id", customer_id)
-        .single()
-        .execute()
+        .single())
     )
     if not result.data:
         raise HTTPException(
@@ -71,14 +70,14 @@ def get_all_customers(
     elif filter_type == "ACTIVE_WARRANTIES":
         from datetime import date
         today_str = date.today().isoformat()
-        batt_res = db.table("batteries").select("customer_id").gte("warranty_expiry", today_str).eq("is_archived", False).execute()
+        batt_res = safe_execute(db.table("batteries").select("customer_id").gte("warranty_expiry", today_str).eq("is_archived", False))
         batt_cust_ids = list({str(b["customer_id"]) for b in (batt_res.data or [])})
         if batt_cust_ids:
             query = query.in_("id", batt_cust_ids)
         else:
             return {"data": [], "total": 0, "page": page, "limit": limit}
     elif filter_type == "PENDING_UDHARI":
-        pay_res = db.table("payments").select("customer_id").eq("is_settled", False).eq("is_archived", False).execute()
+        pay_res = safe_execute(db.table("payments").select("customer_id").eq("is_settled", False).eq("is_archived", False))
         pay_cust_ids = list({str(p["customer_id"]) for p in (pay_res.data or [])})
         if pay_cust_ids:
             query = query.in_("id", pay_cust_ids)
@@ -96,10 +95,9 @@ def get_all_customers(
 
     offset = (page - 1) * limit
     result = (
-        query
+        safe_execute(query
         .order("created_at", desc=True)
-        .range(offset, offset + limit - 1)
-        .execute()
+        .range(offset, offset + limit - 1))
     )
 
     customers = [CustomerResponse.from_row(row) for row in (result.data or [])]
@@ -116,30 +114,27 @@ def get_customer_with_details(db: Client, customer_id: str) -> dict:
     customer = _require_customer(db, customer_id)
 
     batteries = (
-        db.table("batteries")
+        safe_execute(db.table("batteries")
         .select("*")
         .eq("customer_id", customer_id)
         .eq("is_archived", False)
-        .order("sale_date", desc=True)
-        .execute()
+        .order("sale_date", desc=True))
     ).data or []
 
     payments = (
-        db.table("payments")
+        safe_execute(db.table("payments")
         .select("*")
         .eq("customer_id", customer_id)
         .eq("is_archived", False)
-        .order("created_at", desc=True)
-        .execute()
+        .order("created_at", desc=True))
     ).data or []
 
     reminders = (
-        db.table("service_reminders")
+        safe_execute(db.table("service_reminders")
         .select("*")
         .eq("customer_id", customer_id)
         .eq("is_archived", False)
-        .order("reminder_date", desc=False)
-        .execute()
+        .order("reminder_date", desc=False))
     ).data or []
 
     return {
@@ -161,11 +156,10 @@ def create_customer(
     # Check if a customer with the same name already exists (case-insensitive, trimmed)
     name_stripped = data.name.strip()
     existing = (
-        db.table("customers")
+        safe_execute(db.table("customers")
         .select("*")
         .ilike("name", name_stripped)
-        .eq("is_archived", False)
-        .execute()
+        .eq("is_archived", False))
     )
     if existing.data:
         customer_row = existing.data[0]
@@ -180,18 +174,17 @@ def create_customer(
                 updates[field] = val
                 
         if updates:
-            db.table("customers").update(updates).eq("id", customer_id).execute()
+            safe_execute(db.table("customers").update(updates).eq("id", customer_id))
             # Fetch updated row
-            customer_row = db.table("customers").select("*").eq("id", customer_id).single().execute().data
+            customer_row = safe_execute(db.table("customers").select("*").eq("id", customer_id).single()).data
             created = CustomerResponse.from_row(customer_row)
             
         _log(db, f"CUSTOMER_REUSED: Reused existing customer '{data.name}' ({customer_id})", device)
         return {"message": "Customer already exists, reusing existing record", "data": created}
 
     result = (
-        db.table("customers")
-        .insert(data.model_dump())
-        .execute()
+        safe_execute(db.table("customers")
+        .insert(data.model_dump()))
     )
     if not result.data:
         raise HTTPException(
@@ -217,10 +210,9 @@ def update_customer(
         )
 
     result = (
-        db.table("customers")
+        safe_execute(db.table("customers")
         .update(updates)
-        .eq("id", customer_id)
-        .execute()
+        .eq("id", customer_id))
     )
     if not result.data:
         raise HTTPException(
@@ -235,14 +227,14 @@ def update_customer(
 def archive_customer(db: Client, customer_id: str, device: str = "desktop") -> dict:
     """Soft-delete: set is_archived = True."""
     _require_customer(db, customer_id)
-    db.table("customers").update({"is_archived": True}).eq("id", customer_id).execute()
+    safe_execute(db.table("customers").update({"is_archived": True}).eq("id", customer_id))
     _log(db, f"CUSTOMER_ARCHIVED: {customer_id}", device)
     return {"message": "Customer archived successfully"}
 
 
 def restore_customer(db: Client, customer_id: str, device: str = "desktop") -> dict:
     """Undo archive: set is_archived = False."""
-    db.table("customers").update({"is_archived": False}).eq("id", customer_id).execute()
+    safe_execute(db.table("customers").update({"is_archived": False}).eq("id", customer_id))
     _log(db, f"CUSTOMER_RESTORED: {customer_id}", device)
     return {"message": "Customer restored successfully"}
 
@@ -259,11 +251,10 @@ def create_combined_customer(
     # Check if a customer with the same name already exists (case-insensitive, trimmed)
     name_stripped = data.name.strip()
     existing = (
-        db.table("customers")
+        safe_execute(db.table("customers")
         .select("*")
         .ilike("name", name_stripped)
-        .eq("is_archived", False)
-        .execute()
+        .eq("is_archived", False))
     )
     
     if existing.data:
@@ -285,9 +276,9 @@ def create_combined_customer(
             updates["scrap_expected_value"] = float(data.scrap_expected_value)
             
         if updates:
-            db.table("customers").update(updates).eq("id", customer_id).execute()
+            safe_execute(db.table("customers").update(updates).eq("id", customer_id))
             # Fetch updated row
-            customer_row = db.table("customers").select("*").eq("id", customer_id).single().execute().data
+            customer_row = safe_execute(db.table("customers").select("*").eq("id", customer_id).single()).data
             created_customer = CustomerResponse.from_row(customer_row)
     else:
         # 1. Insert customer
@@ -302,7 +293,7 @@ def create_combined_customer(
             "scrap_battery_pending": data.scrap_battery_pending,
             "scrap_expected_value": data.scrap_expected_value,
         }
-        cust_res = db.table("customers").insert(customer_payload).execute()
+        cust_res = safe_execute(db.table("customers").insert(customer_payload))
         if not cust_res.data:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -368,8 +359,8 @@ def create_combined_customer(
 
 def delete_customer_permanently(db: Client, customer_id: str, device: str = "desktop") -> dict:
     """Hard-delete customer and all associated batteries and payments."""
-    db.table("payments").delete().eq("customer_id", customer_id).execute()
-    db.table("batteries").delete().eq("customer_id", customer_id).execute()
-    db.table("customers").delete().eq("id", customer_id).execute()
+    safe_execute(db.table("payments").delete().eq("customer_id", customer_id))
+    safe_execute(db.table("batteries").delete().eq("customer_id", customer_id))
+    safe_execute(db.table("customers").delete().eq("id", customer_id))
     _log(db, f"CUSTOMER_PERMANENTLY_DELETED: {customer_id}", device)
     return {"message": "Customer permanently deleted successfully"}
