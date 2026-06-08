@@ -3,6 +3,7 @@ from dateutil.relativedelta import relativedelta
 from fastapi import HTTPException, status
 from supabase import Client
 
+from app.database import safe_execute
 from app.models.reminder import ReminderCreate, ReminderUpdate, ReminderResponse
 
 

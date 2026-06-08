@@ -1,6 +1,7 @@
 from fastapi import HTTPException, status
 from supabase import Client
 
+from app.database import safe_execute
 from app.models.customer import CustomerCreate, CustomerUpdate, CustomerResponse, CustomerCombinedCreate
 
 

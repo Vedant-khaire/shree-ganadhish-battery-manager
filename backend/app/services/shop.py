@@ -2,6 +2,7 @@ from fastapi import HTTPException, status
 from supabase import Client
 from typing import Optional
 
+from app.database import safe_execute
 from app.models.shop import (
     ShopCreate, ShopUpdate, ShopResponse,
     ShopPurchaseCreate, ShopPurchaseResponse,
