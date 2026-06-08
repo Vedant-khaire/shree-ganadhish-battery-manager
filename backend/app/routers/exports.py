@@ -133,6 +133,13 @@ def export_backup_zip(
     udhari_excel = generate_excel(db, export_type="payments", date_from=date_from, date_to=date_to)
     stock_excel = generate_excel(db, export_type="stock", date_from=date_from, date_to=date_to)
     reminders_excel = generate_excel(db, export_type="reminders", date_from=date_from, date_to=date_to)
+    
+    # Wholesale shops spreadsheets
+    shops_excel = generate_excel(db, export_type="shops", date_from=date_from, date_to=date_to)
+    shop_purchases_excel = generate_excel(db, export_type="shop_purchases", date_from=date_from, date_to=date_to)
+    shop_payments_excel = generate_excel(db, export_type="shop_payments", date_from=date_from, date_to=date_to)
+    shop_txs_excel = generate_excel(db, export_type="shop_payment_transactions", date_from=date_from, date_to=date_to)
+    activity_logs_excel = generate_excel(db, export_type="activity_logs", date_from=date_from, date_to=date_to)
 
     # Zip them in memory
     zip_buffer = BytesIO()
@@ -142,6 +149,11 @@ def export_backup_zip(
         zip_file.writestr("payments.xlsx", udhari_excel)
         zip_file.writestr("stock.xlsx", stock_excel)
         zip_file.writestr("reminders.xlsx", reminders_excel)
+        zip_file.writestr("shops.xlsx", shops_excel)
+        zip_file.writestr("shop_purchases.xlsx", shop_purchases_excel)
+        zip_file.writestr("shop_payments.xlsx", shop_payments_excel)
+        zip_file.writestr("shop_payment_transactions.xlsx", shop_txs_excel)
+        zip_file.writestr("activity_logs.xlsx", activity_logs_excel)
 
     zip_bytes = zip_buffer.getvalue()
 
@@ -292,6 +304,13 @@ def trigger_email_backup(
         payments_excel = generate_excel(db, export_type="payments", date_from=date_from, date_to=date_to)
         stock_excel = generate_excel(db, export_type="stock", date_from=date_from, date_to=date_to)
         reminders_excel = generate_excel(db, export_type="reminders", date_from=date_from, date_to=date_to)
+        
+        # Wholesale shops spreadsheets
+        shops_excel = generate_excel(db, export_type="shops", date_from=date_from, date_to=date_to)
+        shop_purchases_excel = generate_excel(db, export_type="shop_purchases", date_from=date_from, date_to=date_to)
+        shop_payments_excel = generate_excel(db, export_type="shop_payments", date_from=date_from, date_to=date_to)
+        shop_txs_excel = generate_excel(db, export_type="shop_payment_transactions", date_from=date_from, date_to=date_to)
+        activity_logs_excel = generate_excel(db, export_type="activity_logs", date_from=date_from, date_to=date_to)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -306,6 +325,11 @@ def trigger_email_backup(
         zip_file.writestr("payments.xlsx", payments_excel)
         zip_file.writestr("stock.xlsx", stock_excel)
         zip_file.writestr("reminders.xlsx", reminders_excel)
+        zip_file.writestr("shops.xlsx", shops_excel)
+        zip_file.writestr("shop_purchases.xlsx", shop_purchases_excel)
+        zip_file.writestr("shop_payments.xlsx", shop_payments_excel)
+        zip_file.writestr("shop_payment_transactions.xlsx", shop_txs_excel)
+        zip_file.writestr("activity_logs.xlsx", activity_logs_excel)
 
     zip_bytes = zip_buffer.getvalue()
 

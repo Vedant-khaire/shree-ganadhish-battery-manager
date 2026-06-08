@@ -212,6 +212,55 @@ def _build_shop_purchases_sheet(ws, rows: list[dict]) -> None:
     _auto_width(ws)
 
 
+def _build_shop_payments_sheet(ws, rows: list[dict]) -> None:
+    headers = ["Shop Name", "Total Amount (₹)", "Paid Amount (₹)", "Pending Amount (₹)", "Settled", "Created At"]
+    ws.append(headers)
+    _style_header_row(ws, len(headers))
+
+    for r in rows:
+        shop = r.get("shops") or {}
+        ws.append([
+            shop.get("shop_name", ""),
+            float(r.get("total_amount", 0.0)),
+            float(r.get("paid_amount", 0.0)),
+            float(r.get("pending_amount", 0.0)),
+            "Yes" if r.get("is_settled") else "No",
+            str(r.get("created_at", ""))[:10],
+        ])
+    _auto_width(ws)
+
+
+def _build_shop_payment_transactions_sheet(ws, rows: list[dict]) -> None:
+    headers = ["Shop Name", "Transaction Type", "Amount (₹)", "Notes", "Created At"]
+    ws.append(headers)
+    _style_header_row(ws, len(headers))
+
+    for r in rows:
+        shop = r.get("shops") or {}
+        ws.append([
+            shop.get("shop_name", ""),
+            r.get("transaction_type", ""),
+            float(r.get("amount", 0.0)),
+            r.get("notes") or "",
+            str(r.get("created_at", ""))[:10],
+        ])
+    _auto_width(ws)
+
+
+def _build_activity_logs_sheet(ws, rows: list[dict]) -> None:
+    headers = ["Action", "Device", "Created At"]
+    ws.append(headers)
+    _style_header_row(ws, len(headers))
+
+    for r in rows:
+        ws.append([
+            r.get("action", ""),
+            r.get("device", ""),
+            str(r.get("created_at", ""))[:19],
+        ])
+    _auto_width(ws)
+
+
 # ---------------------------------------------------------------------------
 # Public export function
 # ---------------------------------------------------------------------------
@@ -294,6 +343,24 @@ def generate_excel(
             rows = filtered
         ws = wb.create_sheet("Shop Purchases")
         _build_shop_purchases_sheet(ws, rows)
+
+    if export_type == "shop_payments":
+        q = db.table("shop_payments").select("*, shops(shop_name)").execute()
+        rows = q.data or []
+        ws = wb.create_sheet("Shop Payments")
+        _build_shop_payments_sheet(ws, rows)
+
+    if export_type == "shop_payment_transactions":
+        q = db.table("shop_payment_transactions").select("*, shops(shop_name)").execute()
+        rows = q.data or []
+        ws = wb.create_sheet("Shop Transactions")
+        _build_shop_payment_transactions_sheet(ws, rows)
+
+    if export_type == "activity_logs":
+        q = db.table("activity_logs").select("*").execute()
+        rows = q.data or []
+        ws = wb.create_sheet("Activity Logs")
+        _build_activity_logs_sheet(ws, rows)
 
     if not wb.sheetnames:
         raise ValueError(f"Unknown export_type: '{export_type}'")
@@ -431,7 +498,9 @@ def archive_old_records(db: Client, year: int, action: str) -> dict:
         important_prefixes = (
             "BATTERY_ADDED", "PAYMENT_ADDED", "STOCK_ADJUSTED",
             "STOCK_INCREASED", "STOCK_DECREASED", "STOCK_AUTO_DECREASED",
-            "REMINDER_COMPLETED", "EMAIL_BACKUP_SENT", "EMAIL_BACKUP_FAILED"
+            "REMINDER_COMPLETED", "EMAIL_BACKUP_SENT", "EMAIL_BACKUP_FAILED",
+            "BATTERY_RETURNED", "SHOP_PURCHASE_DELETED", "OPENING_BALANCE_ADDED",
+            "ADJUSTMENT_ADDED"
         )
         to_delete = []
         for log in (logs_res.data or []):

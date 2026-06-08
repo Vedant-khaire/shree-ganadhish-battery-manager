@@ -5,13 +5,14 @@ from app.database import get_db
 from app.models.shop import (
     ShopCreate, ShopUpdate, ShopResponse,
     ShopPurchaseCreate, ShopPurchaseResponse,
-    ShopDetailsResponse
+    ShopDetailsResponse, ShopOpeningBalanceCreate
 )
 from app.services.shop import (
     create_shop, get_all_shops, get_shop_by_id,
     get_shop_details, update_shop, archive_shop,
     create_shop_purchase, settle_shop_payment,
-    delete_shop_permanently
+    delete_shop_permanently, delete_shop_purchase,
+    add_shop_opening_balance
 )
 
 router = APIRouter(prefix="/shops", tags=["shops"])
@@ -119,3 +120,26 @@ def delete_shop(
 ):
     """Hard-delete shop profile (blocks if pending Udhari exists)."""
     return delete_shop_permanently(get_db(), shop_id, device=_detect_device(request))
+
+
+@router.delete("/{shop_id}/purchases/{purchase_id}")
+def delete_purchase(
+    shop_id: str,
+    purchase_id: str,
+    request: Request,
+    _: str = Depends(get_current_admin),
+):
+    """Delete a battery purchase entry and restore stock."""
+    return delete_shop_purchase(get_db(), shop_id, purchase_id, device=_detect_device(request))
+
+
+@router.post("/{shop_id}/opening-balance", status_code=201)
+def add_opening_balance(
+    shop_id: str,
+    body: ShopOpeningBalanceCreate,
+    request: Request,
+    _: str = Depends(get_current_admin),
+):
+    """Add a previous outstanding balance or ledger adjustment."""
+    return add_shop_opening_balance(get_db(), shop_id, body, device=_detect_device(request))
+

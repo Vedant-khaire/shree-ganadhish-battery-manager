@@ -168,3 +168,18 @@ class ShopDetailsResponse(BaseModel):
     purchases: List[ShopPurchaseResponse]
     payment: Optional[ShopPaymentResponse] = None
     transactions: List[ShopPaymentTransactionResponse] = []
+
+
+class ShopOpeningBalanceCreate(BaseModel):
+    amount: float
+    date: str
+    notes: Optional[str] = None
+    transaction_type: str = "OPENING_BALANCE"  # "OPENING_BALANCE", "ADJUSTMENT_DEBIT", or "ADJUSTMENT_CREDIT"
+
+    @field_validator("amount")
+    @classmethod
+    def validate_amount(cls, v: float) -> float:
+        if v == 0:
+            raise ValueError("amount cannot be zero")
+        return round(v, 2)
+

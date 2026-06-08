@@ -174,55 +174,98 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                         ],
                         stockModelsAsync.when(
                           data: (stockItems) {
-                            if (stockItems.isEmpty) {
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.amber.shade50,
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: Colors.amber.shade200),
-                                    ),
-                                    child: Text(
-                                      'No active stock items found! You can enter the model manually.',
-                                      style: TextStyle(color: Colors.amber.shade900, fontSize: 13),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  TextFormField(
-                                    decoration: const InputDecoration(
-                                      labelText: 'Battery Model *',
-                                      prefixIcon: Icon(Icons.battery_saver_rounded),
-                                    ),
-                                    textCapitalization: TextCapitalization.characters,
-                                    onChanged: (v) {
-                                      selectedBatteryModel = v.trim().isEmpty ? null : v.trim();
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Autocomplete<String>(
+                                  optionsBuilder: (TextEditingValue textEditingValue) {
+                                    final cleanText = textEditingValue.text.trim().toLowerCase();
+                                    return stockItems
+                                        .map((e) => e.modelName)
+                                        .where((model) => model.toLowerCase().contains(cleanText));
+                                  },
+                                  onSelected: (String selection) {
+                                    setDialogState(() {
+                                      selectedBatteryModel = selection;
+                                    });
+                                  },
+                                  optionsViewBuilder: (context, onSelected, options) {
+                                    return Align(
+                                      alignment: Alignment.topLeft,
+                                      child: Material(
+                                        elevation: 4.0,
+                                        borderRadius: BorderRadius.circular(8),
+                                        color: Colors.white,
+                                        child: Container(
+                                          width: 300,
+                                          constraints: const BoxConstraints(maxHeight: 200),
+                                          decoration: BoxDecoration(
+                                            border: Border.all(color: Colors.grey.shade200),
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: ListView.builder(
+                                            padding: EdgeInsets.zero,
+                                            shrinkWrap: true,
+                                            itemCount: options.length,
+                                            itemBuilder: (BuildContext context, int index) {
+                                              final String option = options.elementAt(index);
+                                              final matchedList = stockItems.where((item) => item.modelName == option).toList();
+                                              final stockItem = matchedList.isNotEmpty ? matchedList.first : null;
+                                              return ListTile(
+                                                title: Text(option, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                                subtitle: Text(stockItem != null ? 'Stock: ${stockItem.quantity} units' : 'Stock: 0 units'),
+                                                onTap: () {
+                                                  onSelected(option);
+                                                },
+                                              );
+                                            },
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                                    return TextFormField(
+                                      controller: textEditingController,
+                                      focusNode: focusNode,
+                                      decoration: const InputDecoration(
+                                        labelText: 'Battery Model *',
+                                        prefixIcon: Icon(Icons.battery_saver_rounded),
+                                      ),
+                                      textCapitalization: TextCapitalization.characters,
+                                      onChanged: (v) {
+                                        setDialogState(() {
+                                          selectedBatteryModel = v.trim().isEmpty ? null : v.trim();
+                                        });
+                                      },
+                                      validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter a battery model' : null,
+                                    );
+                                  },
+                                ),
+                                if (selectedBatteryModel != null && selectedBatteryModel!.trim().isNotEmpty) ...[
+                                  const SizedBox(height: 6),
+                                  Builder(
+                                    builder: (context) {
+                                      final matchedList = stockItems
+                                          .where((item) => item.modelName.toUpperCase() == selectedBatteryModel!.trim().toUpperCase())
+                                          .toList();
+                                      final matchedStockItem = matchedList.isNotEmpty ? matchedList.first : null;
+
+                                      if (matchedStockItem != null) {
+                                        return Text(
+                                          'Available in stock: ${matchedStockItem.quantity} units',
+                                          style: const TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold),
+                                        );
+                                      } else {
+                                        return Text(
+                                          'Battery model not available in inventory. Saving as custom model.',
+                                          style: TextStyle(color: Colors.amber.shade900, fontSize: 13, fontWeight: FontWeight.bold),
+                                        );
+                                      }
                                     },
-                                    validator: (v) => (v == null || v.trim().isEmpty) ? 'Please enter a battery model' : null,
                                   ),
                                 ],
-                              );
-                            }
-                            return DropdownButtonFormField<String>(
-                              value: selectedBatteryModel,
-                              decoration: const InputDecoration(
-                                labelText: 'Select Battery Model *',
-                                prefixIcon: Icon(Icons.battery_saver_rounded),
-                              ),
-                              items: stockItems.map((item) {
-                                return DropdownMenuItem<String>(
-                                  value: item.modelName,
-                                  child: Text('${item.modelName} (Stock: ${item.quantity})'),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                setDialogState(() {
-                                  selectedBatteryModel = value;
-                                });
-                              },
-                              validator: (v) => v == null ? 'Please select a battery model' : null,
+                              ],
                             );
                           },
                           loading: () => const Center(
@@ -421,6 +464,304 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
             ],
           );
         },
+      ),
+    );
+  }
+
+  void _showPreviousUdhariDialog(BuildContext context) {
+    final formKey = GlobalKey<FormState>();
+    final amountController = TextEditingController();
+    final notesController = TextEditingController();
+    String selectedType = 'OPENING_BALANCE';
+    DateTime selectedDate = DateTime.now();
+    bool isSubmitting = false;
+    String? localError;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) {
+          return AlertDialog(
+            title: const Text('Add Previous Udhari / Adjustment'),
+            content: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (localError != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Text(
+                          localError!,
+                          style: TextStyle(color: Colors.red.shade900, fontSize: 13),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
+                    DropdownButtonFormField<String>(
+                      value: selectedType,
+                      decoration: const InputDecoration(
+                        labelText: 'Transaction Type *',
+                        prefixIcon: Icon(Icons.compare_arrows_rounded),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'OPENING_BALANCE',
+                          child: Text('Opening Balance'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'ADJUSTMENT_DEBIT',
+                          child: Text('Adjustment Debit (+ Outstanding)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'ADJUSTMENT_CREDIT',
+                          child: Text('Adjustment Credit (- Outstanding)'),
+                        ),
+                      ],
+                      onChanged: (v) {
+                        if (v != null) {
+                          setDialogState(() {
+                            selectedType = v;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: amountController,
+                      decoration: InputDecoration(
+                        labelText: selectedType == 'OPENING_BALANCE'
+                            ? 'Amount (₹, positive for debit, negative for credit) *'
+                            : 'Amount (₹) *',
+                        prefixIcon: const Icon(Icons.currency_rupee_rounded),
+                      ),
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
+                      validator: (v) {
+                        if (v == null || v.trim().isEmpty) return 'Amount is required';
+                        final val = double.tryParse(v.trim());
+                        if (val == null) return 'Invalid amount';
+                        if (selectedType != 'OPENING_BALANCE' && val <= 0) {
+                          return 'Amount must be greater than 0';
+                        }
+                        if (val == 0) return 'Amount cannot be zero';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    InkWell(
+                      onTap: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now(),
+                        );
+                        if (picked != null) {
+                          setDialogState(() {
+                            selectedDate = picked;
+                          });
+                        }
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(
+                          labelText: 'Transaction Date',
+                          prefixIcon: Icon(Icons.calendar_month_rounded),
+                        ),
+                        child: Text(
+                          DateFormat('dd MMM yyyy').format(selectedDate),
+                          style: const TextStyle(fontSize: 14),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: notesController,
+                      decoration: const InputDecoration(
+                        labelText: 'Notes / Remarks (Optional)',
+                        prefixIcon: Icon(Icons.note_alt_rounded),
+                      ),
+                      maxLines: 2,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: isSubmitting ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: isSubmitting
+                    ? null
+                    : () async {
+                        if (!formKey.currentState!.validate()) return;
+                        setDialogState(() {
+                          isSubmitting = true;
+                          localError = null;
+                        });
+
+                        final payload = {
+                          'amount': double.parse(amountController.text.trim()),
+                          'date': DateFormat('yyyy-MM-dd').format(selectedDate),
+                          'notes': notesController.text.trim().isEmpty ? null : notesController.text.trim(),
+                          'transaction_type': selectedType,
+                        };
+
+                        try {
+                          await ref.read(shopOperationsProvider).addShopOpeningBalance(widget.shopId, payload);
+                          if (context.mounted) {
+                            ToastHelper.show(context, 'Transaction recorded successfully');
+                            Navigator.pop(dialogContext);
+                          }
+                        } on DioException catch (e) {
+                          final data = e.response?.data;
+                          String msg = 'Failed to record transaction';
+                          if (data is Map && data.containsKey('detail')) {
+                            msg = data['detail'].toString();
+                          }
+                          setDialogState(() {
+                            localError = msg;
+                            isSubmitting = false;
+                          });
+                        } catch (e) {
+                          setDialogState(() {
+                            localError = 'An unexpected error occurred: $e';
+                            isSubmitting = false;
+                          });
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.indigo,
+                  foregroundColor: Colors.white,
+                ),
+                child: isSubmitting
+                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : const Text('Submit'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showDeletePurchaseConfirmDialog(BuildContext context, ShopPurchase purchase) {
+    bool isSubmitting = false;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Delete Purchase Entry', style: TextStyle(color: Colors.red)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Are you sure you want to delete this purchase entry?',
+                style: const TextStyle(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Battery Model: ${purchase.batteryModel}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 4),
+                    Text('Serial Number: ${purchase.serialNumber}'),
+                    const SizedBox(height: 4),
+                    Text('Amount: ₹${purchase.amount.toStringAsFixed(2)} | Udhari: ₹${purchase.udhariAmount.toStringAsFixed(2)}'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text('This action will:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              const SizedBox(height: 8),
+              Row(
+                children: const [
+                  Icon(Icons.check_circle_outline_rounded, color: Colors.green, size: 18),
+                  SizedBox(width: 8),
+                  Text('Remove purchase history permanently', style: TextStyle(fontSize: 13)),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: const [
+                  Icon(Icons.check_circle_outline_rounded, color: Colors.green, size: 18),
+                  SizedBox(width: 8),
+                  Text('Restore battery to stock (if tracked)', style: TextStyle(fontSize: 13)),
+                ],
+              ),
+              const SizedBox(height: 6),
+              Row(
+                children: const [
+                  Icon(Icons.check_circle_outline_rounded, color: Colors.green, size: 18),
+                  SizedBox(width: 8),
+                  Text('Safely adjust shop outstanding balance', style: TextStyle(fontSize: 13)),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isSubmitting ? null : () => Navigator.pop(dialogContext),
+              child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+            ),
+            ElevatedButton(
+              onPressed: isSubmitting
+                  ? null
+                  : () async {
+                      setDialogState(() => isSubmitting = true);
+                      try {
+                        await ref
+                            .read(shopOperationsProvider)
+                            .deleteShopPurchase(widget.shopId, purchase.id);
+                        if (context.mounted) {
+                          ToastHelper.show(context, 'Purchase deleted successfully');
+                          Navigator.pop(dialogContext);
+                        }
+                      } on DioException catch (e) {
+                        final data = e.response?.data;
+                        String msg = 'Failed to delete purchase';
+                        if (data is Map && data.containsKey('detail')) {
+                          msg = data['detail'].toString();
+                        }
+                        if (context.mounted) {
+                          ToastHelper.show(context, msg, isError: true);
+                          Navigator.pop(dialogContext);
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ToastHelper.show(context, 'An unexpected error occurred: $e', isError: true);
+                          Navigator.pop(dialogContext);
+                        }
+                      } finally {
+                        setDialogState(() => isSubmitting = false);
+                      }
+                    },
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+              child: isSubmitting
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Text('Delete'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -805,6 +1146,19 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
           ),
         ),
         const SizedBox(width: 8),
+        OutlinedButton.icon(
+          onPressed: () => _showPreviousUdhariDialog(context),
+          icon: const Icon(Icons.balance_rounded, color: Colors.indigo),
+          label: const Text('Previous Udhari / Adjustment', style: TextStyle(color: Colors.indigo)),
+          style: OutlinedButton.styleFrom(
+            side: const BorderSide(color: Colors.indigo),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
         AppButton(
           label: '+ Add Battery Purchase',
           icon: Icons.add_rounded,
@@ -892,6 +1246,7 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                   DataColumn(label: Text('Amount (₹)', textAlign: TextAlign.right)),
                   DataColumn(label: Text('Udhari Amount (₹)', textAlign: TextAlign.right)),
                   DataColumn(label: Text('Status', textAlign: TextAlign.center)),
+                  DataColumn(label: Text('Actions', textAlign: TextAlign.center)),
                 ],
                 rows: purchases.map((p) {
                   final isPaid = p.udhariAmount == 0;
@@ -923,6 +1278,15 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                           ),
                         ),
                       ),
+                      DataCell(
+                        Center(
+                          child: IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded, color: Colors.red),
+                            onPressed: () => _showDeletePurchaseConfirmDialog(context, p),
+                            tooltip: 'Delete Purchase Entry',
+                          ),
+                        ),
+                      ),
                     ],
                   );
                 }).toList(),
@@ -951,7 +1315,63 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
         itemCount: transactions.length,
         itemBuilder: (ctx, idx) {
           final tx = transactions[idx];
-          final isAddition = tx.transactionType == 'ADDITION';
+          final type = tx.transactionType;
+          Color color;
+          IconData icon;
+          String typeLabel;
+          String sign;
+          Color textColor;
+          Color bgColor;
+
+          switch (type) {
+            case 'ADDITION':
+              color = Colors.red;
+              icon = Icons.trending_up_rounded;
+              typeLabel = 'Udhari Addition';
+              sign = '+';
+              textColor = Colors.red.shade900;
+              bgColor = Colors.red.shade50;
+              break;
+            case 'PAYMENT':
+              color = Colors.green;
+              icon = Icons.price_check_rounded;
+              typeLabel = 'Payment Collection';
+              sign = '-';
+              textColor = Colors.green.shade900;
+              bgColor = Colors.green.shade50;
+              break;
+            case 'OPENING_BALANCE':
+              color = Colors.indigo;
+              icon = Icons.account_balance_wallet_rounded;
+              typeLabel = 'Opening Balance';
+              sign = tx.amount >= 0 ? '+' : '-';
+              textColor = Colors.indigo.shade900;
+              bgColor = Colors.indigo.shade50;
+              break;
+            case 'ADJUSTMENT_DEBIT':
+              color = Colors.red;
+              icon = Icons.add_circle_outline_rounded;
+              typeLabel = 'Adjustment Debit';
+              sign = '+';
+              textColor = Colors.red.shade900;
+              bgColor = Colors.red.shade50;
+              break;
+            case 'ADJUSTMENT_CREDIT':
+              color = Colors.teal;
+              icon = Icons.remove_circle_outline_rounded;
+              typeLabel = 'Adjustment Credit';
+              sign = '-';
+              textColor = Colors.teal.shade900;
+              bgColor = Colors.teal.shade50;
+              break;
+            default:
+              color = Colors.grey;
+              icon = Icons.swap_horiz_rounded;
+              typeLabel = type;
+              sign = tx.amount >= 0 ? '+' : '-';
+              textColor = Colors.grey.shade900;
+              bgColor = Colors.grey.shade50;
+          }
           
           return Container(
             decoration: BoxDecoration(
@@ -959,22 +1379,43 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
             ),
             child: ListTile(
               leading: CircleAvatar(
-                backgroundColor: isAddition ? Colors.red.shade50 : Colors.green.shade50,
+                backgroundColor: bgColor,
                 child: Icon(
-                  isAddition ? Icons.trending_up_rounded : Icons.price_check_rounded,
-                  color: isAddition ? Colors.red : Colors.green,
+                  icon,
+                  color: color,
                 ),
               ),
               title: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    isAddition ? 'Udhari Addition' : 'Payment Collection',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: isAddition ? Colors.red.shade900 : Colors.green.shade900),
+                  Row(
+                    children: [
+                      Text(
+                        typeLabel,
+                        style: TextStyle(fontWeight: FontWeight.bold, color: textColor),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: bgColor,
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: color.withOpacity(0.3)),
+                        ),
+                        child: Text(
+                          type,
+                          style: TextStyle(
+                            color: textColor,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   Text(
-                    '${isAddition ? "+" : "-"} ₹${tx.amount.toStringAsFixed(2)}',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: isAddition ? Colors.red : Colors.green),
+                    '$sign ₹${tx.amount.abs().toStringAsFixed(2)}',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: color),
                   ),
                 ],
               ),
@@ -983,7 +1424,7 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(tx.notes ?? (isAddition ? 'Stock bill purchase addition' : 'Retailer payoff settlement')),
+                    Text(tx.notes ?? (type == 'ADDITION' ? 'Stock bill purchase addition' : 'Retailer payoff settlement')),
                     const SizedBox(height: 2),
                     Text(
                       'Logged: ${DateFormat('dd MMM yyyy hh:mm a').format(DateTime.parse(tx.createdAt).toLocal())}',

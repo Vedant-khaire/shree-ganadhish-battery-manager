@@ -6,7 +6,7 @@ from app.models.shop import (
     ShopCreate, ShopUpdate, ShopResponse,
     ShopPurchaseCreate, ShopPurchaseResponse,
     ShopPaymentResponse, ShopPaymentTransactionResponse,
-    ShopDetailsResponse
+    ShopDetailsResponse, ShopOpeningBalanceCreate
 )
 
 
@@ -311,28 +311,34 @@ def archive_shop(db: Client, shop_id: str, archive: bool = True, device: str = "
 
 
 def create_shop_purchase(db: Client, shop_id: str, data: ShopPurchaseCreate, device: str = "desktop") -> dict:
-    # 1. Verify and deduct stock from battery_stock (Refinement 4)
+    # 0. Prevent duplicate serial numbers (case-insensitive)
+    serial_clean = data.serial_number.strip().upper()
+    existing_serial = db.table("shop_purchases").select("id").ilike("serial_number", serial_clean).execute()
+    if existing_serial.data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Battery serial number already exists in the system."
+        )
+
+    # 1. Verify and deduct stock from battery_stock if it exists in inventory
     model_upper = data.battery_model.strip().upper()
     stock_res = db.table("battery_stock").select("*").eq("model_name", model_upper).eq("is_archived", False).execute()
-    if not stock_res.data:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Battery model '{model_upper}' does not exist in stock. Please add it to inventory first."
-        )
     
-    stock_item = stock_res.data[0]
-    if stock_item["quantity"] < data.quantity:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Insufficient stock for model '{model_upper}'. Current stock is {stock_item['quantity']}, but {data.quantity} units requested."
-        )
+    stock_item = None
+    if stock_res.data:
+        stock_item = stock_res.data[0]
+        if stock_item["quantity"] < data.quantity:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Insufficient stock for model '{model_upper}'. Current stock is {stock_item['quantity']}, but {data.quantity} units requested."
+            )
 
     # 2. Record purchase
     purchase_payload = {
         "shop_id": shop_id,
         "battery_model": model_upper,
-        "serial_number": data.serial_number.strip(), # Mandatory (Refinement 2)
-        "invoice_number": data.invoice_number.strip(), # Refinement 3
+        "serial_number": data.serial_number.strip(), # Mandatory
+        "invoice_number": data.invoice_number.strip(),
         "quantity": data.quantity,
         "purchase_date": data.purchase_date,
         "amount": data.amount,
@@ -344,10 +350,11 @@ def create_shop_purchase(db: Client, shop_id: str, data: ShopPurchaseCreate, dev
     
     created_purchase = ShopPurchaseResponse.from_row(pur_res.data[0])
 
-    # 3. Decrement Stock
-    new_qty = stock_item["quantity"] - data.quantity
-    db.table("battery_stock").update({"quantity": new_qty, "updated_at": "now()"}).eq("id", stock_item["id"]).execute()
-    _log(db, f"STOCK_AUTO_DECREASED: {model_upper} (-{data.quantity}) due to shop purchase", device)
+    # 3. Decrement Stock (only if it exists in inventory)
+    if stock_item is not None:
+        new_qty = stock_item["quantity"] - data.quantity
+        db.table("battery_stock").update({"quantity": new_qty, "updated_at": "now()"}).eq("id", stock_item["id"]).execute()
+        _log(db, f"STOCK_AUTO_DECREASED: {model_upper} (-{data.quantity}) due to shop purchase", device)
 
     # 4. Consolidated Udhari Balance Ledger (Refinement 5)
     if data.udhari_amount > 0:
@@ -451,3 +458,162 @@ def delete_shop_permanently(db: Client, shop_id: str, device: str = "desktop") -
 
     _log(db, f"SHOP_PERMANENTLY_DELETED: {shop_id}", device)
     return {"message": "Shop permanently deleted successfully"}
+
+
+def delete_shop_purchase(db: Client, shop_id: str, purchase_id: str, device: str = "desktop") -> dict:
+    shop = _require_shop(db, shop_id)
+    
+    # 1. Fetch the purchase record
+    pur_res = db.table("shop_purchases").select("*").eq("id", purchase_id).eq("shop_id", shop_id).execute()
+    if not pur_res.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Purchase entry not found"
+        )
+    purchase = pur_res.data[0]
+    
+    # 2. Restore stock if it was tracked in inventory
+    model_upper = purchase["battery_model"].strip().upper()
+    stock_res = db.table("battery_stock").select("*").eq("model_name", model_upper).eq("is_archived", False).execute()
+    if stock_res.data:
+        stock_item = stock_res.data[0]
+        new_qty = stock_item["quantity"] + int(purchase["quantity"])
+        db.table("battery_stock").update({"quantity": new_qty, "updated_at": "now()"}).eq("id", stock_item["id"]).execute()
+        _log(db, f"STOCK_AUTO_INCREASED: {model_upper} (+{purchase['quantity']}) due to purchase return", device)
+
+    # 3. Handle Udhari updates safely
+    udhari_amount = float(purchase["udhari_amount"] or 0.0)
+    if udhari_amount > 0:
+        pay_res = db.table("shop_payments").select("*").eq("shop_id", shop_id).execute()
+        if pay_res.data:
+            payment_row = pay_res.data[0]
+            payment_id = payment_row["id"]
+            total_amount = float(payment_row["total_amount"])
+            paid_amount = float(payment_row["paid_amount"])
+            pending_amount = float(payment_row["pending_amount"])
+            
+            new_total = round(total_amount - udhari_amount, 2)
+            
+            # Validation check to ensure payments don't exceed the new total
+            if new_total < paid_amount:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="This purchase is linked to payment records. Please reverse/adjust the payment ledger before deleting this purchase."
+                )
+                
+            new_pending = max(0.0, round(pending_amount - udhari_amount, 2))
+            is_settled = (new_pending == 0.0)
+            
+            db.table("shop_payments").update({
+                "total_amount": new_total,
+                "pending_amount": new_pending,
+                "is_settled": is_settled,
+                "updated_at": "now()"
+            }).eq("id", payment_id).execute()
+            
+            # Find and delete the corresponding ADDITION transaction entry
+            notes_prefix = f"Purchase addition: Model: {model_upper}"
+            db.table("shop_payment_transactions")\
+                .delete()\
+                .eq("payment_id", payment_id)\
+                .eq("transaction_type", "ADDITION")\
+                .eq("amount", udhari_amount)\
+                .like("notes", f"{notes_prefix}%")\
+                .execute()
+
+    # 4. Delete the purchase record
+    db.table("shop_purchases").delete().eq("id", purchase_id).execute()
+    
+    # 5. Log detailed return audit trail
+    log_text = (
+        f"BATTERY_RETURNED:\n"
+        f"Shop: {shop['shop_name']}\n"
+        f"Battery Model: {purchase['battery_model']}\n"
+        f"Serial Number: {purchase['serial_number']}\n"
+        f"Quantity: {purchase['quantity']}\n"
+        f"Reason: Returned To Inventory"
+    )
+    _log(db, log_text, device)
+    
+    return {"message": "Purchase entry deleted and stock restored successfully"}
+
+
+def add_shop_opening_balance(db: Client, shop_id: str, data: ShopOpeningBalanceCreate, device: str = "desktop") -> dict:
+    _require_shop(db, shop_id)
+    
+    # Determine the transaction amount sign based on transaction type
+    amount = data.amount
+    t_type = data.transaction_type.upper().strip()
+    if t_type not in ("OPENING_BALANCE", "ADJUSTMENT_DEBIT", "ADJUSTMENT_CREDIT"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid transaction type"
+        )
+        
+    if t_type == "ADJUSTMENT_CREDIT":
+        amount = -abs(amount)
+    elif t_type == "ADJUSTMENT_DEBIT":
+        amount = abs(amount)
+        
+    if amount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Amount cannot be zero"
+        )
+        
+    # Check if a payment ledger exists
+    pay_res = db.table("shop_payments").select("*").eq("shop_id", shop_id).execute()
+    if pay_res.data:
+        payment_row = pay_res.data[0]
+        payment_id = payment_row["id"]
+        total_amount = float(payment_row["total_amount"])
+        pending_amount = float(payment_row["pending_amount"])
+        
+        new_total = round(total_amount + amount, 2)
+        new_pending = round(pending_amount + amount, 2)
+        
+        if new_pending < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Adjustment cannot make outstanding balance negative."
+            )
+            
+        is_settled = (new_pending == 0.0)
+        
+        db.table("shop_payments").update({
+            "total_amount": new_total,
+            "pending_amount": new_pending,
+            "is_settled": is_settled,
+            "updated_at": "now()"
+        }).eq("id", payment_id).execute()
+    else:
+        if amount < 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Initial balance or adjustment cannot be negative."
+            )
+            
+        new_pay_res = db.table("shop_payments").insert({
+            "shop_id": shop_id,
+            "total_amount": amount,
+            "paid_amount": 0.0,
+            "pending_amount": amount,
+            "is_settled": False
+        }).execute()
+        payment_id = new_pay_res.data[0]["id"]
+        
+    # Insert ledger transaction history
+    db.table("shop_payment_transactions").insert({
+        "payment_id": payment_id,
+        "shop_id": shop_id,
+        "transaction_type": t_type,
+        "amount": amount,
+        "notes": data.notes or f"Manual ledger {t_type.lower().replace('_', ' ')}",
+        "created_at": f"{data.date}T12:00:00+05:30"
+    }).execute()
+    
+    # Log activity
+    log_action = "OPENING_BALANCE_ADDED" if t_type == "OPENING_BALANCE" else "ADJUSTMENT_ADDED"
+    _log(db, f"{log_action}: {t_type.lower().replace('_', ' ')} of ₹{amount} added for shop {shop_id}", device)
+    
+    return {"message": f"{t_type.lower().replace('_', ' ')} recorded successfully"}

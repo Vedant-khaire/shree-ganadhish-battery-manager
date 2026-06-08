@@ -191,4 +191,26 @@ class ShopOperations {
     _ref.invalidate(dashboardProvider);
     _ref.invalidate(paymentListProvider);
   }
+
+  Future<void> deleteShopPurchase(String shopId, String purchaseId) async {
+    final apiClient = _ref.read(apiClientProvider);
+    await apiClient.dio.delete('/shops/$shopId/purchases/$purchaseId');
+    
+    _ref.invalidate(shopListProvider);
+    _ref.invalidate(shopDetailsProvider(shopId));
+    _ref.invalidate(dashboardProvider);
+    _ref.invalidate(stockListProvider);
+    _ref.invalidate(paymentListProvider);
+  }
+
+  Future<void> addShopOpeningBalance(String shopId, Map<String, dynamic> data) async {
+    final apiClient = _ref.read(apiClientProvider);
+    await apiClient.dio.post('/shops/$shopId/opening-balance', data: data);
+    
+    _ref.invalidate(shopListProvider);
+    _ref.invalidate(shopDetailsProvider(shopId));
+    _ref.invalidate(dashboardProvider);
+    _ref.invalidate(stockListProvider);
+    _ref.invalidate(paymentListProvider);
+  }
 }
