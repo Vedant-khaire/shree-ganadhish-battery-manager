@@ -69,10 +69,11 @@ def edit_payment(
 def settle(
     payment_id: str,
     request: Request,
+    payment_mode: str = Query(default="Cash", description="Payment mode: CASH or ONLINE"),
     _: str = Depends(get_current_admin),
 ):
     """Mark udhari as fully paid. Sets paid_amount = total_amount, pending = 0."""
-    return settle_payment(get_db(), payment_id, device=_detect_device(request))
+    return settle_payment(get_db(), payment_id, payment_mode=payment_mode, device=_detect_device(request))
 
 
 @router.patch("/{payment_id}/archive")

@@ -338,7 +338,8 @@ def create_shop_purchase(db: Client, shop_id: str, data: ShopPurchaseCreate, dev
         "quantity": data.quantity,
         "purchase_date": data.purchase_date,
         "amount": data.amount,
-        "udhari_amount": data.udhari_amount
+        "udhari_amount": data.udhari_amount,
+        "payment_mode": data.payment_mode or "Cash",
     }
     pur_res = safe_execute(db.table("shop_purchases").insert(purchase_payload))
     if not pur_res.data:
@@ -392,7 +393,7 @@ def create_shop_purchase(db: Client, shop_id: str, data: ShopPurchaseCreate, dev
 
 
 def settle_shop_payment(
-    db: Client, shop_id: str, amount: float, notes: Optional[str] = None, device: str = "desktop"
+    db: Client, shop_id: str, amount: float, notes: Optional[str] = None, payment_mode: str = "Cash", device: str = "desktop"
 ) -> dict:
     pay_res = safe_execute(db.table("shop_payments").select("*").eq("shop_id", shop_id))
     if not pay_res.data:
@@ -428,7 +429,8 @@ def settle_shop_payment(
         "shop_id": shop_id,
         "transaction_type": "PAYMENT",
         "amount": amount,
-        "notes": notes or "Udhari payment settlement"
+        "notes": notes or "Udhari payment settlement",
+        "payment_mode": payment_mode
     }))
 
     _log(db, f"SHOP_PAYMENT_SETTLED: Shop {shop_id} paid ₹{amount}", device)

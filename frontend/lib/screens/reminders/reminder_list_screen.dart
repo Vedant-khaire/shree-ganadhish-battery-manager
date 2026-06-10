@@ -454,49 +454,87 @@ class _ReminderListScreenState extends ConsumerState<ReminderListScreen> {
   }
 
   void _showSettleConfirmDialog(BuildContext context, WidgetRef ref, String paymentId, String customerId, String name, double amount) {
+    String selectedMode = 'CASH';
     showDialog(
       context: context,
       builder: (BuildContext ctx) {
-        return AlertDialog(
-          title: const Text('Settle Udhari?'),
-          content: Text(
-            'Mark this pending balance of ${FormatUtils.formatIndianCurrency(amount)} for $name as paid in full?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Settle Udhari?'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Mark this pending balance of ${FormatUtils.formatIndianCurrency(amount)} for $name as paid in full?',
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Payment Mode *',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: selectedMode,
+                    decoration: const InputDecoration(
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                      DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          selectedMode = val;
+                        });
+                      }
+                    },
+                  ),
+                ],
               ),
-              onPressed: () async {
-                Navigator.of(ctx).pop();
-                try {
-                  final apiClient = ref.read(apiClientProvider);
-                  await apiClient.dio.patch('/payments/$paymentId/settle');
-                  
-                  ref.invalidate(reminderListProvider);
-                  ref.invalidate(reminderStatsProvider);
-                  
-                  if (context.mounted) {
-                    ToastHelper.show(context, 'Payment settled successfully');
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ToastHelper.show(
-                      context,
-                      'Error: ${ErrorParser.parse(e)}',
-                      isError: true,
-                    );
-                  }
-                }
-              },
-              child: const Text('Confirm Settle'),
-            ),
-          ],
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    try {
+                      final apiClient = ref.read(apiClientProvider);
+                      await apiClient.dio.patch(
+                        '/payments/$paymentId/settle',
+                        queryParameters: {'payment_mode': selectedMode},
+                      );
+                      
+                      ref.invalidate(reminderListProvider);
+                      ref.invalidate(reminderStatsProvider);
+                      
+                      if (context.mounted) {
+                        ToastHelper.show(context, 'Payment settled successfully');
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ToastHelper.show(
+                          context,
+                          'Error: ${ErrorParser.parse(e)}',
+                          isError: true,
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Confirm Settle'),
+                ),
+              ],
+            );
+          },
         );
       },
     );

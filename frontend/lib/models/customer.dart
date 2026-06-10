@@ -11,6 +11,7 @@ class Customer {
   final String? area;
   final String? pincode;
   final String purchaseType; // 'RETAIL' or 'SHOP'
+  final String? paymentMode;
   final bool isArchived;
   final String createdAt;
   final String? updatedAt;
@@ -18,6 +19,7 @@ class Customer {
   final String? scrapReceivedDate;
   final double scrapExpectedValue;
   final double scrapReceivedValue;
+  final String? scrapPaymentMode;
 
   Customer({
     required this.id,
@@ -28,6 +30,7 @@ class Customer {
     this.area,
     this.pincode,
     required this.purchaseType,
+    this.paymentMode,
     required this.isArchived,
     required this.createdAt,
     this.updatedAt,
@@ -35,6 +38,7 @@ class Customer {
     this.scrapReceivedDate,
     this.scrapExpectedValue = 0.0,
     this.scrapReceivedValue = 0.0,
+    this.scrapPaymentMode,
   });
 
   factory Customer.fromJson(Map<String, dynamic> json) {
@@ -47,6 +51,7 @@ class Customer {
       area: json['area'] as String?,
       pincode: json['pincode'] as String?,
       purchaseType: json['purchase_type'] as String? ?? 'RETAIL',
+      paymentMode: json['payment_mode'] as String?,
       isArchived: json['is_archived'] as bool? ?? false,
       createdAt: json['created_at'] as String? ?? '',
       updatedAt: json['updated_at'] as String?,
@@ -54,6 +59,7 @@ class Customer {
       scrapReceivedDate: json['scrap_received_date'] as String?,
       scrapExpectedValue: (json['scrap_expected_value'] as num?)?.toDouble() ?? 0.0,
       scrapReceivedValue: (json['scrap_received_value'] as num?)?.toDouble() ?? 0.0,
+      scrapPaymentMode: json['scrap_payment_mode'] as String?,
     );
   }
 
@@ -66,6 +72,7 @@ class Customer {
     String? area,
     String? pincode,
     String? purchaseType,
+    String? paymentMode,
     bool? isArchived,
     String? createdAt,
     String? updatedAt,
@@ -73,6 +80,7 @@ class Customer {
     String? scrapReceivedDate,
     double? scrapExpectedValue,
     double? scrapReceivedValue,
+    String? scrapPaymentMode,
   }) {
     return Customer(
       id: id ?? this.id,
@@ -83,6 +91,7 @@ class Customer {
       area: area ?? this.area,
       pincode: pincode ?? this.pincode,
       purchaseType: purchaseType ?? this.purchaseType,
+      paymentMode: paymentMode ?? this.paymentMode,
       isArchived: isArchived ?? this.isArchived,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -90,6 +99,7 @@ class Customer {
       scrapReceivedDate: scrapReceivedDate ?? this.scrapReceivedDate,
       scrapExpectedValue: scrapExpectedValue ?? this.scrapExpectedValue,
       scrapReceivedValue: scrapReceivedValue ?? this.scrapReceivedValue,
+      scrapPaymentMode: scrapPaymentMode ?? this.scrapPaymentMode,
     );
   }
 
@@ -103,6 +113,7 @@ class Customer {
       'area': area,
       'pincode': pincode,
       'purchase_type': purchaseType,
+      'payment_mode': paymentMode,
       'is_archived': isArchived,
       'created_at': createdAt,
       'updated_at': updatedAt,
@@ -110,6 +121,7 @@ class Customer {
       'scrap_received_date': scrapReceivedDate,
       'scrap_expected_value': scrapExpectedValue,
       'scrap_received_value': scrapReceivedValue,
+      'scrap_payment_mode': scrapPaymentMode,
     };
   }
 }

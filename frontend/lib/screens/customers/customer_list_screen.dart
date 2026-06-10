@@ -357,6 +357,7 @@ class CustomerListScreen extends ConsumerWidget {
               DataColumn(label: Text('Type')),
               DataColumn(label: Text('Area')),
               DataColumn(label: Text('Purchase Type')),
+              DataColumn(label: Text('Payment Mode')),
               DataColumn(label: Text('Actions')),
             ],
             rows: customers.map((c) {
@@ -409,6 +410,23 @@ class CustomerListScreen extends ConsumerWidget {
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                           color: c.purchaseType == 'SHOP' ? Colors.purple.shade700 : Colors.teal.shade700,
+                        ),
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: c.paymentMode?.toLowerCase() == 'udhari' ? Colors.red.shade50 : Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        c.paymentMode ?? 'Cash',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: c.paymentMode?.toLowerCase() == 'udhari' ? Colors.red.shade700 : Colors.green.shade700,
                         ),
                       ),
                     ),
@@ -528,6 +546,14 @@ class CustomerListScreen extends ConsumerWidget {
                     const Icon(Icons.directions_car, size: 14, color: Color(0xFF64748B)),
                     const SizedBox(width: 6),
                     Text(c.vehicleNo != null ? '${c.vehicleNo} (${c.vehicleType ?? 'Other'})' : 'No Vehicle'),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.payment, size: 14, color: Color(0xFF64748B)),
+                    const SizedBox(width: 6),
+                    Text('Payment: ${c.paymentMode ?? "Cash"}'),
                   ],
                 ),
                 if (c.area != null) ...[

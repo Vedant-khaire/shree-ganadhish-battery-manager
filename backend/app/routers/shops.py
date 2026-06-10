@@ -106,10 +106,11 @@ def settle_payment(
     request: Request,
     amount: float = Query(..., ge=0.01),
     notes: str = Query(default=None),
+    payment_mode: str = Query(default="Cash", description="Payment mode: CASH or ONLINE"),
     _: str = Depends(get_current_admin),
 ):
     """Record a payment settlement towards outstanding Udhari."""
-    return settle_shop_payment(get_db(), shop_id, amount, notes, device=_detect_device(request))
+    return settle_shop_payment(get_db(), shop_id, amount, notes, payment_mode=payment_mode, device=_detect_device(request))
 
 
 @router.delete("/{shop_id}")

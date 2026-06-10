@@ -47,6 +47,7 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
     final formKey = GlobalKey<FormState>();
     final amountController = TextEditingController(text: pendingAmount.toStringAsFixed(2));
     final notesController = TextEditingController();
+    String selectedMode = 'CASH';
     bool isSubmitting = false;
 
     showDialog(
@@ -81,6 +82,25 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                   },
                 ),
                 const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  value: selectedMode,
+                  decoration: const InputDecoration(
+                    labelText: 'Payment Mode *',
+                    prefixIcon: Icon(Icons.payment_rounded),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                    DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setDialogState(() {
+                        selectedMode = val;
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 16),
                 TextFormField(
                   controller: notesController,
                   decoration: const InputDecoration(
@@ -106,7 +126,7 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                       try {
                         final amt = double.parse(amountController.text.trim());
                         final notes = notesController.text.trim().isEmpty ? null : notesController.text.trim();
-                        await ref.read(shopOperationsProvider).settleShopPayment(widget.shopId, amt, notes);
+                        await ref.read(shopOperationsProvider).settleShopPayment(widget.shopId, amt, notes, selectedMode);
                         if (context.mounted) {
                           ToastHelper.show(context, 'Payment settled successfully');
                           Navigator.pop(dialogContext);
@@ -139,6 +159,8 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
     final amountController = TextEditingController();
     final udhariAmountController = TextEditingController(text: '0');
     DateTime purchaseDate = DateTime.now();
+    String selectedPaymentMode = 'Cash';
+    final paymentModes = ['Cash', 'UPI', 'Net banking', 'Udhari'];
     bool isSubmitting = false;
     String? localError;
 
@@ -301,6 +323,31 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                           textCapitalization: TextCapitalization.characters,
                         ),
                         const SizedBox(height: 12),
+
+                        DropdownButtonFormField<String>(
+                          value: selectedPaymentMode,
+                          decoration: const InputDecoration(
+                            labelText: 'Payment Mode *',
+                            prefixIcon: Icon(Icons.payment_outlined),
+                          ),
+                          items: paymentModes.map((mode) {
+                            return DropdownMenuItem(
+                              value: mode,
+                              child: Text(mode),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setDialogState(() {
+                                selectedPaymentMode = val;
+                                if (val != 'Udhari') {
+                                  udhariAmountController.text = '0';
+                                }
+                              });
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 12),
                         Row(
                           children: [
                             Expanded(
@@ -368,23 +415,25 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                                 },
                               ),
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: TextFormField(
-                                controller: udhariAmountController,
-                                decoration: const InputDecoration(
-                                  labelText: 'Udhari Amount (₹)',
-                                  prefixIcon: Icon(Icons.credit_card_rounded),
+                            if (selectedPaymentMode == 'Udhari') ...[
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: udhariAmountController,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Udhari Amount (₹)',
+                                    prefixIcon: Icon(Icons.credit_card_rounded),
+                                  ),
+                                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                  validator: (v) {
+                                    if (v == null || v.trim().isEmpty) return null;
+                                    final val = double.tryParse(v.trim());
+                                    if (val == null || val < 0) return 'Must be >= 0';
+                                    return null;
+                                  },
                                 ),
-                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                validator: (v) {
-                                  if (v == null || v.trim().isEmpty) return null;
-                                  final val = double.tryParse(v.trim());
-                                  if (val == null || val < 0) return 'Must be >= 0';
-                                  return null;
-                                },
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       ],
@@ -433,6 +482,7 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                           'purchase_date': DateFormat('yyyy-MM-dd').format(purchaseDate),
                           'amount': amt,
                           'udhari_amount': udhari,
+                          'payment_mode': selectedPaymentMode,
                         };
 
                         try {
@@ -1322,11 +1372,13 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                   DataColumn(label: Text('Quantity', textAlign: TextAlign.center)),
                   DataColumn(label: Text('Amount (₹)', textAlign: TextAlign.right)),
                   DataColumn(label: Text('Udhari Amount (₹)', textAlign: TextAlign.right)),
+                  DataColumn(label: Text('Payment Mode', textAlign: TextAlign.center)),
                   DataColumn(label: Text('Status', textAlign: TextAlign.center)),
                   DataColumn(label: Text('Actions', textAlign: TextAlign.center)),
                 ],
                 rows: purchases.map((p) {
                   final isPaid = p.udhariAmount == 0;
+                  final pMode = p.paymentMode ?? 'Cash';
                   return DataRow(
                     cells: [
                       DataCell(Text(DateFormat('dd MMM yyyy').format(DateTime.parse(p.purchaseDate)))),
@@ -1335,6 +1387,25 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                       DataCell(Center(child: Text('${p.quantity}'))),
                       DataCell(Align(alignment: Alignment.centerRight, child: Text('₹${p.amount.toStringAsFixed(2)}'))),
                       DataCell(Align(alignment: Alignment.centerRight, child: Text('₹${p.udhariAmount.toStringAsFixed(2)}'))),
+                      DataCell(
+                        Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: pMode.toLowerCase() == 'udhari' ? Colors.red.shade50 : Colors.green.shade50,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              pMode,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: pMode.toLowerCase() == 'udhari' ? Colors.red.shade700 : Colors.green.shade700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                       DataCell(
                         Center(
                           child: Container(
@@ -1502,10 +1573,32 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(tx.notes ?? (type == 'ADDITION' ? 'Stock bill purchase addition' : 'Retailer payoff settlement')),
-                    const SizedBox(height: 2),
-                    Text(
-                      'Logged: ${DateFormat('dd MMM yyyy hh:mm a').format(DateTime.parse(tx.createdAt).toLocal())}',
-                      style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Logged: ${DateFormat('dd MMM yyyy hh:mm a').format(DateTime.parse(tx.createdAt).toLocal())}',
+                          style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                        ),
+                        if (tx.paymentMode != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.shade50,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                            ),
+                            child: Text(
+                              tx.paymentMode!,
+                              style: TextStyle(
+                                color: Colors.blue.shade900,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),

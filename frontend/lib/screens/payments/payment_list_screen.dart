@@ -17,44 +17,79 @@ class PaymentListScreen extends ConsumerWidget {
   const PaymentListScreen({super.key});
 
   void _showSettleConfirmDialog(BuildContext context, WidgetRef ref, String paymentId, String customerId, String name, double amount) {
+    String selectedMode = 'CASH';
     showDialog(
       context: context,
       builder: (BuildContext ctx) {
-        return AlertDialog(
-          title: const Text('Settle Udhari?'),
-          content: Text(
-            'Mark this pending balance of ${FormatUtils.formatIndianCurrency(amount)} for $name as paid in full?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Settle Udhari?'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Mark this pending balance of ${FormatUtils.formatIndianCurrency(amount)} for $name as paid in full?',
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Payment Mode *',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: selectedMode,
+                    decoration: const InputDecoration(
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                      DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          selectedMode = val;
+                        });
+                      }
+                    },
+                  ),
+                ],
               ),
-              onPressed: () async {
-                Navigator.of(ctx).pop();
-                try {
-                  await ref.read(paymentOperationsProvider).settlePayment(paymentId, customerId);
-                  if (context.mounted) {
-                    ToastHelper.show(context, 'Payment settled successfully');
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ToastHelper.show(
-                      context,
-                      'Error: ${ErrorParser.parse(e)}',
-                      isError: true,
-                    );
-                  }
-                }
-              },
-              child: const Text('Confirm Settle'),
-            ),
-          ],
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    try {
+                      await ref.read(paymentOperationsProvider).settlePayment(paymentId, customerId, selectedMode);
+                      if (context.mounted) {
+                        ToastHelper.show(context, 'Payment settled successfully');
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ToastHelper.show(
+                          context,
+                          'Error: ${ErrorParser.parse(e)}',
+                          isError: true,
+                        );
+                      }
+                    }
+                  },
+                  child: const Text('Confirm Settle'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -681,9 +716,26 @@ void _showTransactionHistoryDialog(BuildContext context, WidgetRef ref, Payment 
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (tx.notes != null) Text(tx.notes!),
-                            Text(
-                              FormatUtils.formatDate(tx.createdAt.split('T').first),
-                              style: const TextStyle(fontSize: 11, color: Colors.grey),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  FormatUtils.formatDate(tx.createdAt.split('T').first),
+                                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                                ),
+                                if (!isAdd && tx.paymentMode != null)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.shade50,
+                                      borderRadius: BorderRadius.circular(3),
+                                    ),
+                                    child: Text(
+                                      tx.paymentMode!,
+                                      style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: Colors.blue.shade800),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ],
                         ),

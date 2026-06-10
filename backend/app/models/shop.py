@@ -61,6 +61,7 @@ class ShopPurchaseCreate(BaseModel):
     purchase_date: str
     amount: float
     udhari_amount: float = 0.0
+    payment_mode: Optional[str] = "Cash"
 
     @field_validator("battery_model", "serial_number")
     @classmethod
@@ -102,6 +103,7 @@ class ShopPurchaseResponse(BaseModel):
     amount: float
     udhari_amount: float
     created_at: str
+    payment_mode: Optional[str] = "Cash"
 
     @classmethod
     def from_row(cls, row: dict) -> "ShopPurchaseResponse":
@@ -116,6 +118,7 @@ class ShopPurchaseResponse(BaseModel):
             amount=float(row.get("amount", 0.0)),
             udhari_amount=float(row.get("udhari_amount", 0.0)),
             created_at=str(row.get("created_at", "")),
+            payment_mode=row.get("payment_mode", "Cash"),
         )
 
 
@@ -149,6 +152,7 @@ class ShopPaymentTransactionResponse(BaseModel):
     amount: float
     notes: Optional[str]
     created_at: str
+    payment_mode: Optional[str] = None
 
     @classmethod
     def from_row(cls, row: dict) -> "ShopPaymentTransactionResponse":
@@ -160,6 +164,7 @@ class ShopPaymentTransactionResponse(BaseModel):
             amount=float(row.get("amount", 0.0)),
             notes=row.get("notes"),
             created_at=str(row.get("created_at", "")),
+            payment_mode=row.get("payment_mode"),
         )
 
 

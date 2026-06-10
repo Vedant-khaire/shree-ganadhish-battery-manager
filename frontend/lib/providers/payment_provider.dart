@@ -132,7 +132,7 @@ class PaymentOperations {
     _ref.invalidate(dashboardProvider);
   }
 
-  Future<void> settlePayment(String id, String customerId) async {
+  Future<void> settlePayment(String id, String customerId, String paymentMode) async {
     // 1. Optimistic details cache update
     final detailState = _ref.read(customerDetailsProvider(customerId));
     if (detailState is AsyncData<CustomerWithDetails>) {
@@ -143,6 +143,7 @@ class PaymentOperations {
             isSettled: true,
             paidAmount: p.totalAmount,
             pendingAmount: 0.0,
+            paymentMode: paymentMode,
           );
         }
         return p;
@@ -168,6 +169,7 @@ class PaymentOperations {
             isSettled: true,
             paidAmount: p.totalAmount,
             pendingAmount: 0.0,
+            paymentMode: paymentMode,
           );
         }
         return p;
@@ -184,7 +186,10 @@ class PaymentOperations {
 
     try {
       final apiClient = _ref.read(apiClientProvider);
-      await apiClient.dio.patch('/payments/$id/settle');
+      await apiClient.dio.patch(
+        '/payments/$id/settle',
+        queryParameters: {'payment_mode': paymentMode},
+      );
       
       // Invalidate to fetch exact sync in background
       _ref.invalidate(customerDetailsProvider(customerId));

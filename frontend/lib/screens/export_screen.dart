@@ -120,6 +120,10 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
       filename = 'guarantees_$today.xlsx';
     } else if (_exportType == 'payments') {
       filename = 'udhari_$today.xlsx';
+    } else if (_exportType == 'customer_payment_transactions') {
+      filename = 'customer_payment_transactions_$today.xlsx';
+    } else if (_exportType == 'scrap_payments') {
+      filename = 'scrap_battery_payments_$today.xlsx';
     } else {
       filename = 'shree_ganadhish_export_$today.xlsx';
     }
@@ -467,6 +471,10 @@ class _ExportScreenState extends ConsumerState<ExportScreen> {
             _buildRadioTile('batteries', 'Guarantee Registry Only', 'All registered batteries, warranty durations, expiry dates, and serial numbers.', Icons.battery_charging_full_outlined),
             const Divider(),
             _buildRadioTile('payments', 'Udhari & Payments Ledger', 'List of outstanding debts, totals, paid amounts, and customer contact info.', Icons.receipt_long_outlined),
+            const Divider(),
+            _buildRadioTile('customer_payment_transactions', 'Customer Payments History', 'Detailed history of all customer payments and transactions.', Icons.history_outlined),
+            const Divider(),
+            _buildRadioTile('scrap_payments', 'Scrap Battery Payouts', 'List of scrap battery payouts, expected/received values, and payout dates.', Icons.recycling_outlined),
           ],
         ),
       ),

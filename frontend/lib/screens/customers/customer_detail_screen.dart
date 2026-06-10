@@ -181,44 +181,79 @@ class CustomerDetailScreen extends ConsumerWidget {
   }
 
   void _settlePayment(BuildContext context, WidgetRef ref, String paymentId, double pendingAmount) {
+    String selectedMode = 'CASH';
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Settle Udhari?'),
-        content: Text(
-          'Mark this payment as settled? This will record that the pending balance of '
-          '${FormatUtils.formatIndianCurrency(pendingAmount)} has been paid in full.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primaryColor,
-              foregroundColor: Colors.white,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('Settle Udhari?'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Mark this payment as settled? This will record that the pending balance of '
+                  '${FormatUtils.formatIndianCurrency(pendingAmount)} has been paid in full.',
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Payment Mode *',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: selectedMode,
+                  decoration: const InputDecoration(
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                    DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() {
+                        selectedMode = val;
+                      });
+                    }
+                  },
+                ),
+              ],
             ),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              try {
-                await ref.read(paymentOperationsProvider).settlePayment(paymentId, customerId);
-                if (context.mounted) {
-                  ToastHelper.show(context, 'Payment settled successfully');
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ToastHelper.show(
-                    context,
-                    'Error settling payment: ${ErrorParser.parse(e)}',
-                    isError: true,
-                  );
-                }
-              }
-            },
-            child: const Text('Confirm Settle'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  try {
+                    await ref.read(paymentOperationsProvider).settlePayment(paymentId, customerId, selectedMode);
+                    if (context.mounted) {
+                      ToastHelper.show(context, 'Payment settled successfully');
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ToastHelper.show(
+                        context,
+                        'Error settling payment: ${ErrorParser.parse(e)}',
+                        isError: true,
+                      );
+                    }
+                  }
+                },
+                child: const Text('Confirm Settle'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1113,7 +1148,7 @@ class CustomerDetailScreen extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      method,
+                      p.isSettled ? (p.paymentMode ?? 'N/A') : method,
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blue.shade800),
                     ),
@@ -1216,7 +1251,7 @@ class CustomerDetailScreen extends ConsumerWidget {
                       ),
                     ),
                     Text(
-                      'Method: $method',
+                      p.isSettled ? 'Settlement Mode: ${p.paymentMode ?? 'N/A'}' : 'Method: $method',
                       style: const TextStyle(fontSize: 12, color: Color(0xFF64748B), fontWeight: FontWeight.w500),
                     ),
                   ],

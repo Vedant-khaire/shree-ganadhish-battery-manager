@@ -12,6 +12,7 @@ class Payment {
   final String? updatedAt;
   final String? customerName;
   final String? customerMobile;
+  final String? paymentMode;
 
   Payment({
     required this.id,
@@ -27,6 +28,7 @@ class Payment {
     this.updatedAt,
     this.customerName,
     this.customerMobile,
+    this.paymentMode,
   });
 
   factory Payment.fromJson(Map<String, dynamic> json) {
@@ -44,6 +46,7 @@ class Payment {
       updatedAt: json['updated_at'] as String?,
       customerName: json['customer_name'] as String?,
       customerMobile: json['customer_mobile'] as String?,
+      paymentMode: json['payment_mode'] as String?,
     );
   }
 
@@ -61,6 +64,7 @@ class Payment {
     String? updatedAt,
     String? customerName,
     String? customerMobile,
+    String? paymentMode,
   }) {
     return Payment(
       id: id ?? this.id,
@@ -76,6 +80,7 @@ class Payment {
       updatedAt: updatedAt ?? this.updatedAt,
       customerName: customerName ?? this.customerName,
       customerMobile: customerMobile ?? this.customerMobile,
+      paymentMode: paymentMode ?? this.paymentMode,
     );
   }
 
@@ -94,6 +99,7 @@ class Payment {
       'updated_at': updatedAt,
       'customer_name': customerName,
       'customer_mobile': customerMobile,
+      'payment_mode': paymentMode,
     };
   }
 }
@@ -106,6 +112,7 @@ class PaymentTransaction {
   final double amount;
   final String? notes;
   final String createdAt;
+  final String? paymentMode;
 
   PaymentTransaction({
     required this.id,
@@ -115,6 +122,7 @@ class PaymentTransaction {
     required this.amount,
     this.notes,
     required this.createdAt,
+    this.paymentMode,
   });
 
   factory PaymentTransaction.fromJson(Map<String, dynamic> json) {
@@ -126,6 +134,7 @@ class PaymentTransaction {
       amount: (json['amount'] as num).toDouble(),
       notes: json['notes'] as String?,
       createdAt: json['created_at'] as String? ?? '',
+      paymentMode: json['payment_mode'] as String?,
     );
   }
 }

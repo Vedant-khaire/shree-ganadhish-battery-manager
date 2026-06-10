@@ -21,82 +21,112 @@ class ScrapBatteriesScreen extends ConsumerWidget {
   void _showMarkReceivedDialog(BuildContext context, WidgetRef ref, Customer customer) {
     final controller = TextEditingController(text: customer.scrapExpectedValue.toStringAsFixed(0));
     final formKey = GlobalKey<FormState>();
+    String selectedMode = 'CASH';
 
     showDialog(
       context: context,
       builder: (BuildContext ctx) {
-        return AlertDialog(
-          title: Text('Mark Scrap Received: ${customer.name}'),
-          content: Form(
-            key: formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Expected Value: ₹${customer.scrapExpectedValue.toStringAsFixed(2)}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Text('Mark Scrap Received: ${customer.name}'),
+              content: Form(
+                key: formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Expected Value: ₹${customer.scrapExpectedValue.toStringAsFixed(2)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 16),
+                    AppInput(
+                      controller: controller,
+                      labelText: 'Received Scrap Value (₹) *',
+                      prefixIcon: Icons.currency_rupee,
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'Received value is required';
+                        }
+                        if (double.tryParse(value) == null || double.tryParse(value)! < 0) {
+                          return 'Enter a valid positive number';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Payout Mode *',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: selectedMode,
+                      decoration: const InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                        DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() {
+                            selectedMode = val;
+                          });
+                        }
+                      },
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 16),
-                AppInput(
-                  controller: controller,
-                  labelText: 'Received Scrap Value (₹) *',
-                  prefixIcon: Icons.currency_rupee,
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Received value is required';
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    if (!formKey.currentState!.validate()) return;
+                    Navigator.of(ctx).pop();
+                    
+                    final val = double.parse(controller.text.trim());
+                    try {
+                      final operations = ref.read(customerOperationsProvider);
+                      final payload = {
+                        'scrap_battery_pending': false,
+                        'scrap_received_date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
+                        'scrap_received_value': val,
+                        'scrap_payment_mode': selectedMode,
+                      };
+                      
+                      await operations.updateCustomer(customer.id, payload);
+                      
+                      if (context.mounted) {
+                        ToastHelper.show(context, 'Scrap battery received successfully');
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ToastHelper.show(
+                          context,
+                          'Error: ${ErrorParser.parse(e)}',
+                          isError: true,
+                        );
+                      }
                     }
-                    if (double.tryParse(value) == null || double.tryParse(value)! < 0) {
-                      return 'Enter a valid positive number';
-                    }
-                    return null;
                   },
+                  child: const Text('Mark Received'),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
-              ),
-              onPressed: () async {
-                if (!formKey.currentState!.validate()) return;
-                Navigator.of(ctx).pop();
-                
-                final val = double.parse(controller.text.trim());
-                try {
-                  final operations = ref.read(customerOperationsProvider);
-                  final payload = {
-                    'scrap_battery_pending': false,
-                    'scrap_received_date': DateFormat('yyyy-MM-dd').format(DateTime.now()),
-                    'scrap_received_value': val,
-                  };
-                  
-                  await operations.updateCustomer(customer.id, payload);
-                  
-                  if (context.mounted) {
-                    ToastHelper.show(context, 'Scrap battery received successfully');
-                  }
-                } catch (e) {
-                  if (context.mounted) {
-                    ToastHelper.show(
-                      context,
-                      'Error: ${ErrorParser.parse(e)}',
-                      isError: true,
-                    );
-                  }
-                }
-              },
-              child: const Text('Mark Received'),
-            ),
-          ],
+            );
+          },
         );
       },
     );

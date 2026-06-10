@@ -75,6 +75,10 @@ def export_excel(
         filename = f"guarantees{suffix}.xlsx"
     elif type == "payments":
         filename = f"udhari{suffix}.xlsx"
+    elif type == "customer_payment_transactions":
+        filename = f"customer_payment_transactions{suffix}.xlsx"
+    elif type == "scrap_payments":
+        filename = f"scrap_battery_payments{suffix}.xlsx"
     elif type == "stock":
         filename = f"stock{suffix}.xlsx"
     elif type == "shops":
@@ -140,6 +144,10 @@ def export_backup_zip(
     shop_payments_excel = generate_excel(db, export_type="shop_payments", date_from=date_from, date_to=date_to)
     shop_txs_excel = generate_excel(db, export_type="shop_payment_transactions", date_from=date_from, date_to=date_to)
     activity_logs_excel = generate_excel(db, export_type="activity_logs", date_from=date_from, date_to=date_to)
+    
+    # Customer transactions and scrap payments spreadsheets
+    customer_txs_excel = generate_excel(db, export_type="customer_payment_transactions", date_from=date_from, date_to=date_to)
+    scrap_payments_excel = generate_excel(db, export_type="scrap_payments", date_from=date_from, date_to=date_to)
 
     # Zip them in memory
     zip_buffer = BytesIO()
@@ -153,6 +161,8 @@ def export_backup_zip(
         zip_file.writestr("shop_purchases.xlsx", shop_purchases_excel)
         zip_file.writestr("shop_payments.xlsx", shop_payments_excel)
         zip_file.writestr("shop_payment_transactions.xlsx", shop_txs_excel)
+        zip_file.writestr("customer_payment_transactions.xlsx", customer_txs_excel)
+        zip_file.writestr("scrap_battery_payments.xlsx", scrap_payments_excel)
         zip_file.writestr("activity_logs.xlsx", activity_logs_excel)
 
     zip_bytes = zip_buffer.getvalue()
@@ -311,6 +321,10 @@ def trigger_email_backup(
         shop_payments_excel = generate_excel(db, export_type="shop_payments", date_from=date_from, date_to=date_to)
         shop_txs_excel = generate_excel(db, export_type="shop_payment_transactions", date_from=date_from, date_to=date_to)
         activity_logs_excel = generate_excel(db, export_type="activity_logs", date_from=date_from, date_to=date_to)
+        
+        # Customer transactions and scrap payments spreadsheets
+        customer_txs_excel = generate_excel(db, export_type="customer_payment_transactions", date_from=date_from, date_to=date_to)
+        scrap_payments_excel = generate_excel(db, export_type="scrap_payments", date_from=date_from, date_to=date_to)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -329,6 +343,8 @@ def trigger_email_backup(
         zip_file.writestr("shop_purchases.xlsx", shop_purchases_excel)
         zip_file.writestr("shop_payments.xlsx", shop_payments_excel)
         zip_file.writestr("shop_payment_transactions.xlsx", shop_txs_excel)
+        zip_file.writestr("customer_payment_transactions.xlsx", customer_txs_excel)
+        zip_file.writestr("scrap_battery_payments.xlsx", scrap_payments_excel)
         zip_file.writestr("activity_logs.xlsx", activity_logs_excel)
 
     zip_bytes = zip_buffer.getvalue()

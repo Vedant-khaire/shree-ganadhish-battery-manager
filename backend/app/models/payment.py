@@ -12,6 +12,7 @@ class PaymentCreate(BaseModel):
     total_amount: float
     paid_amount: float = 0.0
     reminder_note: Optional[str] = None
+    payment_mode: Optional[str] = "Cash"
 
     @field_validator("total_amount")
     @classmethod
@@ -32,6 +33,7 @@ class PaymentUpdate(BaseModel):
     total_amount: Optional[float] = None
     paid_amount: Optional[float] = None
     reminder_note: Optional[str] = None
+    payment_mode: Optional[str] = None
 
     @field_validator("total_amount")
     @classmethod
@@ -66,6 +68,7 @@ class PaymentResponse(BaseModel):
     updated_at: Optional[str] = None
     customer_name: Optional[str] = None
     customer_mobile: Optional[str] = None
+    payment_mode: Optional[str] = None
 
     @classmethod
     def from_row(cls, row: dict) -> "PaymentResponse":
@@ -87,6 +90,7 @@ class PaymentResponse(BaseModel):
             updated_at=str(row["updated_at"]) if row.get("updated_at") else None,
             customer_name=customer_name,
             customer_mobile=customer_mobile,
+            payment_mode=row.get("payment_mode"),
         )
 
 
@@ -110,6 +114,7 @@ class PaymentTransactionResponse(BaseModel):
     amount: float
     notes: Optional[str]
     created_at: str
+    payment_mode: Optional[str] = None
 
     @classmethod
     def from_row(cls, row: dict) -> "PaymentTransactionResponse":
@@ -121,5 +126,7 @@ class PaymentTransactionResponse(BaseModel):
             amount=float(row.get("amount", 0)),
             notes=row.get("notes"),
             created_at=str(row.get("created_at", "")),
+            payment_mode=row.get("payment_mode"),
         )
+
 

@@ -33,6 +33,8 @@ class _ShopPurchaseFormScreenState extends ConsumerState<ShopPurchaseFormScreen>
   final _udhariAmountController = TextEditingController(text: '0');
 
   DateTime _purchaseDate = DateTime.now();
+  String _paymentMode = 'Cash';
+  final List<String> _paymentModes = ['Cash', 'UPI', 'Net banking', 'Udhari'];
   bool _isSubmitting = false;
   String? _errorMessage;
 
@@ -71,9 +73,9 @@ class _ShopPurchaseFormScreenState extends ConsumerState<ShopPurchaseFormScreen>
     }
 
     final totalAmount = double.tryParse(_amountController.text.trim()) ?? 0.0;
-    final udhariAmount = double.tryParse(_udhariAmountController.text.trim()) ?? 0.0;
+    final udhariAmount = _paymentMode == 'Udhari' ? (double.tryParse(_udhariAmountController.text.trim()) ?? 0.0) : 0.0;
 
-    if (udhariAmount > totalAmount) {
+    if (_paymentMode == 'Udhari' && udhariAmount > totalAmount) {
       setState(() {
         _errorMessage = 'Udhari amount cannot be greater than the total amount';
       });
@@ -93,6 +95,7 @@ class _ShopPurchaseFormScreenState extends ConsumerState<ShopPurchaseFormScreen>
       'purchase_date': DateFormat('yyyy-MM-dd').format(_purchaseDate),
       'amount': totalAmount,
       'udhari_amount': udhariAmount,
+      'payment_mode': _paymentMode,
     };
 
     try {
@@ -296,6 +299,31 @@ class _ShopPurchaseFormScreenState extends ConsumerState<ShopPurchaseFormScreen>
                               ),
                               const SizedBox(height: 20),
 
+                              DropdownButtonFormField<String>(
+                                value: _paymentMode,
+                                decoration: const InputDecoration(
+                                  labelText: 'Payment Mode *',
+                                  prefixIcon: Icon(Icons.payment_outlined),
+                                ),
+                                items: _paymentModes.map((mode) {
+                                  return DropdownMenuItem(
+                                    value: mode,
+                                    child: Text(mode),
+                                  );
+                                }).toList(),
+                                onChanged: (val) {
+                                  if (val != null) {
+                                    setState(() {
+                                      _paymentMode = val;
+                                      if (val != 'Udhari') {
+                                        _udhariAmountController.text = '0';
+                                      }
+                                    });
+                                  }
+                                },
+                              ),
+                              const SizedBox(height: 20),
+
                               Row(
                                 children: [
                                   Expanded(
@@ -348,21 +376,23 @@ class _ShopPurchaseFormScreenState extends ConsumerState<ShopPurchaseFormScreen>
                                       },
                                     ),
                                   ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: AppInput(
-                                      controller: _udhariAmountController,
-                                      labelText: 'Udhari Amount (₹)',
-                                      prefixIcon: Icons.credit_card_rounded,
-                                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                                      validator: (v) {
-                                        if (v == null || v.trim().isEmpty) return null;
-                                        final val = double.tryParse(v.trim());
-                                        if (val == null || val < 0) return 'Must be >= 0';
-                                        return null;
-                                      },
+                                  if (_paymentMode == 'Udhari') ...[
+                                    const SizedBox(width: 16),
+                                    Expanded(
+                                      child: AppInput(
+                                        controller: _udhariAmountController,
+                                        labelText: 'Udhari Amount (₹)',
+                                        prefixIcon: Icons.credit_card_rounded,
+                                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                        validator: (v) {
+                                          if (v == null || v.trim().isEmpty) return null;
+                                          final val = double.tryParse(v.trim());
+                                          if (val == null || val < 0) return 'Must be >= 0';
+                                          return null;
+                                        },
+                                      ),
                                     ),
-                                  ),
+                                  ],
                                 ],
                               ),
                               const SizedBox(height: 32),

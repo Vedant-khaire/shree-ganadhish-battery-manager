@@ -65,6 +65,7 @@ class ShopPurchase {
   final double amount;
   final double udhariAmount;
   final String createdAt;
+  final String? paymentMode;
 
   ShopPurchase({
     required this.id,
@@ -77,6 +78,7 @@ class ShopPurchase {
     required this.amount,
     required this.udhariAmount,
     required this.createdAt,
+    this.paymentMode,
   });
 
   factory ShopPurchase.fromJson(Map<String, dynamic> json) {
@@ -91,6 +93,7 @@ class ShopPurchase {
       amount: (json['amount'] as num? ?? 0.0).toDouble(),
       udhariAmount: (json['udhari_amount'] as num? ?? 0.0).toDouble(),
       createdAt: json['created_at'] as String,
+      paymentMode: json['payment_mode'] as String?,
     );
   }
 }
@@ -135,6 +138,7 @@ class ShopPaymentTransaction {
   final double amount;
   final String? notes;
   final String createdAt;
+  final String? paymentMode;
 
   ShopPaymentTransaction({
     required this.id,
@@ -144,6 +148,7 @@ class ShopPaymentTransaction {
     required this.amount,
     this.notes,
     required this.createdAt,
+    this.paymentMode,
   });
 
   factory ShopPaymentTransaction.fromJson(Map<String, dynamic> json) {
@@ -155,6 +160,7 @@ class ShopPaymentTransaction {
       amount: (json['amount'] as num? ?? 0.0).toDouble(),
       notes: json['notes'] as String?,
       createdAt: json['created_at'] as String,
+      paymentMode: json['payment_mode'] as String?,
     );
   }
 }

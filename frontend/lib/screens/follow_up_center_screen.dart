@@ -171,50 +171,85 @@ class _FollowUpCenterScreenState extends ConsumerState<FollowUpCenterScreen> wit
 
   // Settle Outstanding Payment
   void _settleUdhari(String paymentId, String customerId, String name, double amount) {
+    String selectedMode = 'CASH';
     showDialog(
       context: context,
       builder: (BuildContext ctx) {
-        return AlertDialog(
-          title: const Text('Settle Udhari Payment?'),
-          content: Text('Are you sure you want to mark ₹${amount.toStringAsFixed(2)} outstanding debt for "$name" as fully paid? This will auto-complete all associated follow-ups.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                foregroundColor: Colors.white,
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Settle Udhari Payment?'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Are you sure you want to mark ₹${amount.toStringAsFixed(2)} outstanding debt for "$name" as fully paid? This will auto-complete all associated follow-ups.'),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Payment Mode *',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    value: selectedMode,
+                    decoration: const InputDecoration(
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      border: OutlineInputBorder(),
+                    ),
+                    items: const [
+                      DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                      DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
+                    ],
+                    onChanged: (val) {
+                      if (val != null) {
+                        setState(() {
+                          selectedMode = val;
+                        });
+                      }
+                    },
+                  ),
+                ],
               ),
-              onPressed: () async {
-                Navigator.of(ctx).pop();
-                setState(() {
-                  _isActionExecuting = true;
-                });
-                try {
-                  await ref.read(paymentOperationsProvider).settlePayment(paymentId, customerId);
-                  await _loadPaymentsCache();
-                  if (mounted) {
-                    ToastHelper.show(context, 'Payment settled and recorded successfully');
-                  }
-                } catch (e) {
-                  if (mounted) {
-                    ToastHelper.show(context, 'Error: ${ErrorParser.parse(e)}', isError: true);
-                  }
-                } finally {
-                  if (mounted) {
-                    setState(() {
-                      _isActionExecuting = false;
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: () async {
+                    Navigator.of(ctx).pop();
+                    this.setState(() {
+                      _isActionExecuting = true;
                     });
-                  }
-                  ref.invalidate(reminderListProvider);
-                  ref.invalidate(dashboardProvider);
-                }
-              },
-              child: const Text('Confirm Settle'),
-            ),
-          ],
+                    try {
+                      await ref.read(paymentOperationsProvider).settlePayment(paymentId, customerId, selectedMode);
+                      await _loadPaymentsCache();
+                      if (mounted) {
+                        ToastHelper.show(context, 'Payment settled and recorded successfully');
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ToastHelper.show(context, 'Error: ${ErrorParser.parse(e)}', isError: true);
+                      }
+                    } finally {
+                      if (mounted) {
+                        this.setState(() {
+                          _isActionExecuting = false;
+                        });
+                      }
+                      ref.invalidate(reminderListProvider);
+                      ref.invalidate(dashboardProvider);
+                    }
+                  },
+                  child: const Text('Confirm Settle'),
+                ),
+              ],
+            );
+          },
         );
       },
     );

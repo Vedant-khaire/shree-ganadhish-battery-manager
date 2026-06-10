@@ -176,13 +176,14 @@ class ShopOperations {
     _ref.invalidate(paymentListProvider);
   }
 
-  Future<void> settleShopPayment(String id, double amount, String? notes) async {
+  Future<void> settleShopPayment(String id, double amount, String? notes, String paymentMode) async {
     final apiClient = _ref.read(apiClientProvider);
     await apiClient.dio.post(
       '/shops/$id/settle',
       queryParameters: {
         'amount': amount,
         if (notes != null && notes.isNotEmpty) 'notes': notes,
+        'payment_mode': paymentMode,
       },
     );
     

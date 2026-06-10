@@ -38,46 +38,85 @@ def _auto_width(ws) -> None:
 def _build_customers_sheet(ws, rows: list[dict]) -> None:
     headers = [
         "Name", "Mobile", "Vehicle No", "Vehicle Type",
-        "Area", "Pincode", "Purchase Type", "Created At",
+        "Area", "Pincode", "Purchase Type", "Payment Mode",
+        "Battery Type", "Battery Model", "Serial Number",
+        "Sale Date", "Guarantee Months", "Guarantee Expiry",
+        "Scrap Payout Mode", "Scrap Payment Date", "Created At",
     ]
     ws.append(headers)
     _style_header_row(ws, len(headers))
 
     for r in rows:
-        ws.append([
-            r.get("name", ""),
-            r.get("mobile", ""),
-            r.get("vehicle_no", ""),
-            r.get("vehicle_type", ""),
-            r.get("area", ""),
-            r.get("pincode", ""),
-            r.get("purchase_type", ""),
-            str(r.get("created_at", ""))[:10],
-        ])
+        batteries = r.get("batteries") or []
+        if not batteries:
+            ws.append([
+                r.get("name", ""),
+                r.get("mobile", ""),
+                r.get("vehicle_no", ""),
+                r.get("vehicle_type", ""),
+                r.get("area", ""),
+                r.get("pincode", ""),
+                r.get("purchase_type", ""),
+                r.get("payment_mode") or "N/A",
+                "N/A", "N/A", "N/A", "N/A", "N/A", "N/A",
+                r.get("scrap_payment_mode") or "N/A",
+                str(r.get("scrap_received_date", ""))[:10] if r.get("scrap_received_date") else "N/A",
+                str(r.get("created_at", ""))[:10],
+            ])
+        else:
+            for b in batteries:
+                ws.append([
+                    r.get("name", ""),
+                    r.get("mobile", ""),
+                    r.get("vehicle_no", ""),
+                    r.get("vehicle_type", ""),
+                    r.get("area", ""),
+                    r.get("pincode", ""),
+                    r.get("purchase_type", ""),
+                    r.get("payment_mode") or "N/A",
+                    b.get("battery_type", "") or "N/A",
+                    b.get("model_name") or b.get("model_number", "") or "N/A",
+                    b.get("serial_number", "") or "N/A",
+                    str(b.get("sale_date", ""))[:10] if b.get("sale_date") else "N/A",
+                    b.get("warranty_months", "") or "N/A",
+                    str(b.get("warranty_expiry", ""))[:10] if b.get("warranty_expiry") else "N/A",
+                    r.get("scrap_payment_mode") or "N/A",
+                    str(r.get("scrap_received_date", ""))[:10] if r.get("scrap_received_date") else "N/A",
+                    str(r.get("created_at", ""))[:10],
+                ])
     _auto_width(ws)
 
 
 def _build_batteries_sheet(ws, rows: list[dict]) -> None:
     headers = [
-        "Customer Name", "Customer ID", "Battery Type", "Model Number", "Serial Number",
+        "Customer Name", "Mobile", "Battery Type", "Model Number", "Serial Number",
         "Sale Date", "Guarantee Months", "Guarantee Expiry",
-        "Guarantee Reminder Date", "Created At",
+        "Total Amount (₹)", "Paid Amount (₹)", "Pending Amount (₹)", "Settled",
+        "Payment Mode", "Payment Date", "Created At",
     ]
     ws.append(headers)
     _style_header_row(ws, len(headers))
 
     for r in rows:
-        customer_name = r.get("customers", {}).get("name", "") if r.get("customers") else ""
+        customer = r.get("customers") or {}
+        payments_list = r.get("payments") or []
+        payment = payments_list[0] if payments_list else {}
+        
         ws.append([
-            customer_name,
-            str(r.get("customer_id", "")),
+            customer.get("name", ""),
+            customer.get("mobile", ""),
             r.get("battery_type", ""),
             r.get("model_number", ""),
             r.get("serial_number", ""),
             str(r.get("sale_date", ""))[:10],
             r.get("warranty_months", ""),
             str(r.get("warranty_expiry", ""))[:10],
-            str(r.get("warranty_reminder_date", ""))[:10],
+            float(payment.get("total_amount") or 0.0) if payment else 0.0,
+            float(payment.get("paid_amount") or 0.0) if payment else 0.0,
+            float(payment.get("pending_amount") or 0.0) if payment else 0.0,
+            "Yes" if payment.get("is_settled") else ("No" if payment else "N/A"),
+            payment.get("payment_mode") or customer.get("payment_mode") or "N/A",
+            str(payment.get("updated_at") or payment.get("created_at", ""))[:10] if payment and (payment.get("is_settled") or float(payment.get("paid_amount", 0.0)) > 0) else "N/A",
             str(r.get("created_at", ""))[:10],
         ])
     _auto_width(ws)
@@ -86,28 +125,33 @@ def _build_batteries_sheet(ws, rows: list[dict]) -> None:
 def _build_payments_sheet(ws, rows: list[dict]) -> None:
     # UI label: "Udhari" — backend field: payments
     headers = [
-        "Customer Name", "Battery Type/Model", "Customer ID", "Battery ID", "Total Amount (₹)",
+        "Customer Name", "Mobile", "Vehicle No", "Vehicle Type",
+        "Battery Type/Model", "Serial Number", "Total Amount (₹)",
         "Paid Amount (₹)", "Pending Amount (₹)",
-        "Reminder Note", "Settled", "Created At",
+        "Reminder Note", "Settled", "Payment Mode", "Payment Date", "Created At",
     ]
     ws.append(headers)
     _style_header_row(ws, len(headers))
 
     for r in rows:
-        customer_name = r.get("customers", {}).get("name", "") if r.get("customers") else ""
-        battery_data = r.get("batteries") or {}
-        battery_model = f"{battery_data.get('battery_type', '')} {battery_data.get('model_number', '')}".strip()
+        customer = r.get("customers") or {}
+        battery = r.get("batteries") or {}
+        battery_model = f"{battery.get('battery_type', '')} {battery.get('model_number', '')}".strip()
         
         ws.append([
-            customer_name,
-            battery_model,
-            str(r.get("customer_id", "")),
-            str(r.get("battery_id", "") or ""),
-            float(r.get("total_amount", 0)),
-            float(r.get("paid_amount", 0)),
-            float(r.get("pending_amount", 0)),
+            customer.get("name", ""),
+            customer.get("mobile", ""),
+            customer.get("vehicle_no", ""),
+            customer.get("vehicle_type", ""),
+            battery_model or "N/A",
+            battery.get("serial_number") or "N/A",
+            float(r.get("total_amount", 0.0)),
+            float(r.get("paid_amount", 0.0)),
+            float(r.get("pending_amount", 0.0)),
             r.get("reminder_note", ""),
             "Yes" if r.get("is_settled") else "No",
+            r.get("payment_mode") or "N/A",
+            str(r.get("updated_at") or r.get("created_at", ""))[:10] if r.get("is_settled") or float(r.get("paid_amount", 0)) > 0 else "N/A",
             str(r.get("created_at", ""))[:10],
         ])
     _auto_width(ws)
@@ -189,7 +233,7 @@ def _build_shops_sheet(ws, rows: list[dict]) -> None:
 def _build_shop_purchases_sheet(ws, rows: list[dict]) -> None:
     headers = [
         "Shop Name", "Owner Name", "Mobile", "Battery Model", "Serial Number", "Invoice Number",
-        "Quantity", "Purchase Date", "Amount (₹)", "Udhari Amount (₹)", "Created At"
+        "Quantity", "Purchase Date", "Amount (₹)", "Udhari Amount (₹)", "Payment Mode", "Created At"
     ]
     ws.append(headers)
     _style_header_row(ws, len(headers))
@@ -207,6 +251,7 @@ def _build_shop_purchases_sheet(ws, rows: list[dict]) -> None:
             str(r.get("purchase_date", ""))[:10],
             float(r.get("amount", 0.0)),
             float(r.get("udhari_amount", 0.0)),
+            r.get("payment_mode") or "N/A",
             str(r.get("created_at", ""))[:10],
         ])
     _auto_width(ws)
@@ -231,7 +276,7 @@ def _build_shop_payments_sheet(ws, rows: list[dict]) -> None:
 
 
 def _build_shop_payment_transactions_sheet(ws, rows: list[dict]) -> None:
-    headers = ["Shop Name", "Transaction Type", "Amount (₹)", "Notes", "Created At"]
+    headers = ["Shop Name", "Transaction Type", "Amount (₹)", "Notes", "Payment Mode", "Payment Date", "Created At"]
     ws.append(headers)
     _style_header_row(ws, len(headers))
 
@@ -242,6 +287,67 @@ def _build_shop_payment_transactions_sheet(ws, rows: list[dict]) -> None:
             r.get("transaction_type", ""),
             float(r.get("amount", 0.0)),
             r.get("notes") or "",
+            r.get("payment_mode") or "N/A",
+            str(r.get("created_at", ""))[:10],
+            str(r.get("created_at", ""))[:10],
+        ])
+    _auto_width(ws)
+
+
+def _build_customer_transactions_sheet(ws, rows: list[dict]) -> None:
+    headers = [
+        "Customer Name", "Mobile", "Transaction Type", "Amount (₹)",
+        "Battery Model", "Serial Number", "Notes", "Payment Mode", "Payment Date", "Created At"
+    ]
+    ws.append(headers)
+    _style_header_row(ws, len(headers))
+
+    for r in rows:
+        customer = r.get("customers") or {}
+        payment = r.get("payments") or {}
+        battery = payment.get("batteries") or {}
+        battery_model = f"{battery.get('battery_type', '')} {battery.get('model_number', '')}".strip()
+        
+        ws.append([
+            customer.get("name", ""),
+            customer.get("mobile", ""),
+            r.get("transaction_type", ""),
+            float(r.get("amount", 0.0)),
+            battery_model or "N/A",
+            battery.get("serial_number") or "N/A",
+            r.get("notes") or "",
+            r.get("payment_mode") or "N/A",
+            str(r.get("created_at", ""))[:10],
+            str(r.get("created_at", ""))[:10],
+        ])
+    _auto_width(ws)
+
+
+def _build_scrap_payments_sheet(ws, rows: list[dict]) -> None:
+    headers = [
+        "Customer Name", "Mobile", "Expected Scrap Value (₹)", "Received Scrap Value (₹)",
+        "Payment Mode", "Payment Date", "Registered Battery (Model/Serial)", "Created At"
+    ]
+    ws.append(headers)
+    _style_header_row(ws, len(headers))
+
+    for r in rows:
+        batteries = r.get("batteries") or []
+        battery_desc_list = []
+        for b in batteries:
+            model = b.get("model_number") or b.get("model_name") or ""
+            serial = b.get("serial_number") or ""
+            battery_desc_list.append(f"{model} ({serial})".strip())
+        battery_desc = ", ".join(battery_desc_list) if battery_desc_list else "N/A"
+
+        ws.append([
+            r.get("name", ""),
+            r.get("mobile", ""),
+            float(r.get("scrap_expected_value", 0.0)),
+            float(r.get("scrap_received_value", 0.0)),
+            r.get("scrap_payment_mode") or "N/A",
+            str(r.get("scrap_received_date", ""))[:10] if r.get("scrap_received_date") else "N/A",
+            battery_desc,
             str(r.get("created_at", ""))[:10],
         ])
     _auto_width(ws)
@@ -287,21 +393,21 @@ def generate_excel(
         return query
 
     if export_type in ("customers", "all"):
-        q = db.table("customers").select("*").eq("is_archived", False)
+        q = db.table("customers").select("*, batteries(*)").eq("is_archived", False)
         q = _date_filter(q)
         rows = q.order("created_at", desc=False).execute().data or []
         ws = wb.create_sheet("Customers")
         _build_customers_sheet(ws, rows)
 
     if export_type in ("batteries", "all"):
-        q = db.table("batteries").select("*, customers(name)").eq("is_archived", False)
+        q = db.table("batteries").select("*, customers(*), payments(*)").eq("is_archived", False)
         q = _date_filter(q, "sale_date")
         rows = q.order("sale_date", desc=False).execute().data or []
         ws = wb.create_sheet("Guarantee Records")  # UI label
         _build_batteries_sheet(ws, rows)
 
     if export_type in ("payments", "all"):
-        q = db.table("payments").select("*, customers(name), batteries(battery_type, model_number)").eq("is_archived", False)
+        q = db.table("payments").select("*, customers(*), batteries(*)").eq("is_archived", False)
         q = _date_filter(q)
         rows = q.order("created_at", desc=False).execute().data or []
         ws = wb.create_sheet("Udhari")   # UI label
@@ -361,6 +467,26 @@ def generate_excel(
         rows = q.data or []
         ws = wb.create_sheet("Activity Logs")
         _build_activity_logs_sheet(ws, rows)
+
+    if export_type in ("customer_payment_transactions", "all"):
+        q = db.table("payment_transactions").select("*, customers(*), payments(*, batteries(*))")
+        if date_from:
+            q = q.gte("created_at", f"{date_from}T00:00:00")
+        if date_to:
+            q = q.lte("created_at", f"{date_to}T23:59:59")
+        rows = q.order("created_at", desc=False).execute().data or []
+        ws = wb.create_sheet("Customer Transactions")
+        _build_customer_transactions_sheet(ws, rows)
+
+    if export_type in ("scrap_payments", "all"):
+        q = db.table("customers").select("*, batteries(*)").eq("is_archived", False).not_.is_("scrap_received_date", "null")
+        if date_from:
+            q = q.gte("scrap_received_date", date_from)
+        if date_to:
+            q = q.lte("scrap_received_date", date_to)
+        rows = q.order("scrap_received_date", desc=False).execute().data or []
+        ws = wb.create_sheet("Scrap Payments")
+        _build_scrap_payments_sheet(ws, rows)
 
     if not wb.sheetnames:
         raise ValueError(f"Unknown export_type: '{export_type}'")
@@ -424,7 +550,7 @@ def generate_shop_statement_excel(db: Client, shop_id: str) -> bytes:
 
     # 2. Purchases History
     ws_purchases = wb.create_sheet("Purchase History")
-    p_headers = ["Purchase Date", "Battery Model", "Serial Number", "Invoice Number", "Quantity", "Amount (₹)", "Udhari Amount (₹)"]
+    p_headers = ["Purchase Date", "Battery Model", "Serial Number", "Invoice Number", "Quantity", "Amount (₹)", "Udhari Amount (₹)", "Payment Mode"]
     ws_purchases.append(p_headers)
     _style_header_row(ws_purchases, len(p_headers))
     for p in purchases:
@@ -435,7 +561,8 @@ def generate_shop_statement_excel(db: Client, shop_id: str) -> bytes:
             p.invoice_number,
             p.quantity,
             float(p.amount),
-            float(p.udhari_amount)
+            float(p.udhari_amount),
+            p.payment_mode or "N/A"
         ])
     
     # Format amount columns
@@ -446,7 +573,7 @@ def generate_shop_statement_excel(db: Client, shop_id: str) -> bytes:
 
     # 3. Udhari Ledger Transaction History
     ws_payments = wb.create_sheet("Udhari Transaction History")
-    t_headers = ["Transaction Date", "Transaction Type", "Amount (₹)", "Notes"]
+    t_headers = ["Transaction Date", "Transaction Type", "Amount (₹)", "Notes", "Payment Mode", "Payment Date"]
     ws_payments.append(t_headers)
     _style_header_row(ws_payments, len(t_headers))
     for t in transactions:
@@ -454,7 +581,9 @@ def generate_shop_statement_excel(db: Client, shop_id: str) -> bytes:
             str(t.created_at)[:10],
             t.transaction_type,
             float(t.amount),
-            t.notes or ""
+            t.notes or "",
+            t.payment_mode or "N/A",
+            str(t.created_at)[:10],
         ])
         
     for row in range(2, len(transactions) + 2):

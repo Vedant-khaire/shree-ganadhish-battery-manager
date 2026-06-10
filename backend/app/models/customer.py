@@ -17,6 +17,8 @@ class CustomerCreate(BaseModel):
     purchase_type: str = "RETAIL"   # 'RETAIL' or 'SHOP'
     scrap_battery_pending: bool = False
     scrap_expected_value: float = 0.0
+    payment_mode: Optional[str] = "Cash"
+    scrap_payment_mode: Optional[str] = None
 
     @field_validator("name")
     @classmethod
@@ -55,6 +57,8 @@ class CustomerUpdate(BaseModel):
     scrap_received_date: Optional[date] = None
     scrap_expected_value: Optional[float] = None
     scrap_received_value: Optional[float] = None
+    payment_mode: Optional[str] = None
+    scrap_payment_mode: Optional[str] = None
 
     @field_validator("mobile")
     @classmethod
@@ -97,6 +101,8 @@ class CustomerResponse(BaseModel):
     scrap_received_date: Optional[str] = None
     scrap_expected_value: float = 0.0
     scrap_received_value: float = 0.0
+    payment_mode: Optional[str] = "Cash"
+    scrap_payment_mode: Optional[str] = None
 
     @classmethod
     def from_row(cls, row: dict) -> "CustomerResponse":
@@ -116,6 +122,8 @@ class CustomerResponse(BaseModel):
             scrap_received_date=str(row["scrap_received_date"]) if row.get("scrap_received_date") else None,
             scrap_expected_value=float(row.get("scrap_expected_value", 0.0)),
             scrap_received_value=float(row.get("scrap_received_value", 0.0)),
+            payment_mode=row.get("payment_mode", "Cash"),
+            scrap_payment_mode=row.get("scrap_payment_mode"),
         )
 
 
@@ -149,6 +157,8 @@ class CustomerCombinedCreate(BaseModel):
     area: Optional[str] = None
     pincode: Optional[str] = None
     purchase_type: str = "RETAIL"
+    payment_mode: Optional[str] = "Cash"
+    scrap_payment_mode: Optional[str] = None
 
     # Battery fields
     battery_model: Optional[str] = None

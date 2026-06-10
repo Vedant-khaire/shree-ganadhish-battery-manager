@@ -96,15 +96,18 @@ def get_payment_by_id(db: Client, payment_id: str) -> PaymentResponse:
 # Write operations
 # ---------------------------------------------------------------------------
 
-def _log_transaction(db: Client, payment_id: str, customer_id: str, t_type: str, amount: float, notes: str = None) -> None:
+def _log_transaction(db: Client, payment_id: str, customer_id: str, t_type: str, amount: float, notes: str = None, payment_mode: str = None) -> None:
     try:
-        db.table("payment_transactions").insert({
+        payload = {
             "payment_id": payment_id,
             "customer_id": customer_id,
             "transaction_type": t_type,
             "amount": amount,
             "notes": notes
-        }).execute()
+        }
+        if payment_mode:
+            payload["payment_mode"] = payment_mode
+        db.table("payment_transactions").insert(payload).execute()
     except Exception:
         pass
 
@@ -141,6 +144,8 @@ def create_payment(
             "pending_amount": new_pending,
             "is_settled": is_settled,
         }
+        if data.payment_mode:
+            updates["payment_mode"] = data.payment_mode
         if data.battery_id and not existing.get("battery_id"):
             updates["battery_id"] = data.battery_id
         if data.reminder_note:
@@ -156,7 +161,7 @@ def create_payment(
         # Log transactions
         _log_transaction(db, payment_id, data.customer_id, "ADDITION", data.total_amount, "Consolidated bill addition")
         if data.paid_amount > 0:
-            _log_transaction(db, payment_id, data.customer_id, "PAYMENT", data.paid_amount, "Consolidated payment amount")
+            _log_transaction(db, payment_id, data.customer_id, "PAYMENT", data.paid_amount, "Consolidated payment amount", payment_mode=data.payment_mode)
 
         # Sync/Schedule reminders
         try:
@@ -195,7 +200,7 @@ def create_payment(
         # Log transactions
         _log_transaction(db, payment_id, data.customer_id, "ADDITION", data.total_amount, "Initial bill addition")
         if data.paid_amount > 0:
-            _log_transaction(db, payment_id, data.customer_id, "PAYMENT", data.paid_amount, "Initial payment amount")
+            _log_transaction(db, payment_id, data.customer_id, "PAYMENT", data.paid_amount, "Initial payment amount", payment_mode=data.payment_mode)
 
         # Schedule Udhari reminders
         if pending > 0:
@@ -234,7 +239,7 @@ def update_payment(
     diff_paid = paid - float(existing.get("paid_amount", 0.0))
     if diff_paid != 0:
         t_type = "PAYMENT" if diff_paid > 0 else "ADJUSTMENT"
-        _log_transaction(db, payment_id, str(existing["customer_id"]), t_type, abs(diff_paid), "Payment adjustment")
+        _log_transaction(db, payment_id, str(existing["customer_id"]), t_type, abs(diff_paid), "Payment adjustment", payment_mode=data.payment_mode)
 
     result = db.table("payments").update(updates).eq("id", payment_id).execute()
     if not result.data:
@@ -275,7 +280,7 @@ def update_payment(
     return {"message": "Payment updated successfully", "data": updated}
 
 
-def settle_payment(db: Client, payment_id: str, device: str = "desktop") -> dict:
+def settle_payment(db: Client, payment_id: str, payment_mode: str, device: str = "desktop") -> dict:
     """Mark payment as fully settled and log transaction."""
     existing = _require_payment(db, payment_id)
 
@@ -289,10 +294,11 @@ def settle_payment(db: Client, payment_id: str, device: str = "desktop") -> dict
         "paid_amount": total,
         "pending_amount": 0.0,
         "is_settled": True,
+        "payment_mode": payment_mode,
     }).eq("id", payment_id).execute()
 
     # Log full settlement transaction
-    _log_transaction(db, payment_id, str(existing["customer_id"]), "PAYMENT", pending, "Full settlement payment")
+    _log_transaction(db, payment_id, str(existing["customer_id"]), "PAYMENT", pending, "Full settlement payment", payment_mode=payment_mode)
 
     # Settle all related reminders
     try:

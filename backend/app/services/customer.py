@@ -169,7 +169,7 @@ def create_customer(
         
         # Merge/update details if they are provided and not present in DB
         updates = {}
-        for field in ["mobile", "vehicle_no", "vehicle_type", "area", "pincode", "purchase_type"]:
+        for field in ["mobile", "vehicle_no", "vehicle_type", "area", "pincode", "purchase_type", "payment_mode", "scrap_payment_mode"]:
             val = getattr(data, field, None)
             if val and not customer_row.get(field):
                 updates[field] = val
@@ -265,7 +265,7 @@ def create_combined_customer(
         
         # Merge/update details if they are provided and not present
         updates = {}
-        for field in ["mobile", "vehicle_no", "vehicle_type", "area", "pincode", "purchase_type"]:
+        for field in ["mobile", "vehicle_no", "vehicle_type", "area", "pincode", "purchase_type", "payment_mode", "scrap_payment_mode"]:
             val = getattr(data, field, None)
             if val and not customer_row.get(field):
                 updates[field] = val
@@ -293,6 +293,8 @@ def create_combined_customer(
             "purchase_type": data.purchase_type,
             "scrap_battery_pending": data.scrap_battery_pending,
             "scrap_expected_value": data.scrap_expected_value,
+            "payment_mode": data.payment_mode or "Cash",
+            "scrap_payment_mode": data.scrap_payment_mode,
         }
         cust_res = safe_execute(db.table("customers").insert(customer_payload))
         if not cust_res.data:

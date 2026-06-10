@@ -33,6 +33,8 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
   
   String _purchaseType = 'RETAIL';
   String _vehicleType = '4W'; // Default selection
+  String _paymentMode = 'Cash'; // Default payment mode
+  final List<String> _paymentModes = ['Cash', 'UPI', 'Net banking', 'Udhari'];
   bool _isPrefilled = false;
   bool _isSubmitting = false;
   String? _errorMessage;
@@ -74,12 +76,14 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
     super.initState();
     _totalAmountController.addListener(_onPaymentAmountsChanged);
     _paidAmountController.addListener(_onPaymentAmountsChanged);
+    _batteryPriceController.addListener(_onBatteryPriceChanged);
   }
 
   @override
   void dispose() {
     _totalAmountController.removeListener(_onPaymentAmountsChanged);
     _paidAmountController.removeListener(_onPaymentAmountsChanged);
+    _batteryPriceController.removeListener(_onBatteryPriceChanged);
     
     _nameController.dispose();
     _mobileController.dispose();
@@ -98,6 +102,15 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
     _paymentMethodController.dispose();
     _paymentNotesController.dispose();
     super.dispose();
+  }
+
+  void _onBatteryPriceChanged() {
+    if (_paymentMode != 'Udhari') {
+      final priceText = _batteryPriceController.text.trim();
+      _totalAmountController.text = priceText;
+      _paidAmountController.text = priceText;
+      _onPaymentAmountsChanged();
+    }
   }
 
   void _onPaymentAmountsChanged() {
@@ -126,6 +139,15 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
     } else if (normalizedType.isNotEmpty) {
       _vehicleType = 'OTHER';
     }
+    
+    // Prefill payment mode
+    final mode = customer.paymentMode?.trim() ?? 'Cash';
+    final matchedMode = _paymentModes.firstWhere(
+      (m) => m.toLowerCase() == mode.toLowerCase(),
+      orElse: () => 'Cash',
+    );
+    _paymentMode = matchedMode;
+    _hasUdhari = (_paymentMode == 'Udhari');
     
     _isPrefilled = true;
   }
@@ -179,12 +201,14 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
           'area': _areaController.text.trim().isEmpty ? null : _areaController.text.trim(),
           'pincode': _pincodeController.text.trim().isEmpty ? null : _pincodeController.text.trim(),
           'purchase_type': _purchaseType,
+          'payment_mode': _paymentMode,
           'scrap_battery_pending': _scrapBatteryPending,
           'scrap_expected_value': double.tryParse(_scrapExpectedValueController.text.trim()) ?? 0.0,
         };
         await operations.updateCustomer(widget.customerId!, payload);
       } else {
         // Combined Register Customer + Battery Mode
+        final batteryPrice = double.tryParse(_batteryPriceController.text.trim()) ?? 0.0;
         final payload = {
           'name': _nameController.text.trim(),
           'mobile': _mobileController.text.trim(),
@@ -193,6 +217,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
           'area': _areaController.text.trim().isEmpty ? null : _areaController.text.trim(),
           'pincode': _pincodeController.text.trim().isEmpty ? null : _pincodeController.text.trim(),
           'purchase_type': _purchaseType,
+          'payment_mode': _paymentMode,
           'scrap_battery_pending': _scrapBatteryPending,
           'scrap_expected_value': double.tryParse(_scrapExpectedValueController.text.trim()) ?? 0.0,
 
@@ -201,18 +226,18 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
           'battery_serial_number': _batterySerialController.text.trim().toUpperCase(),
           'battery_warranty_months': _warrantyMonths,
           'battery_type': _batteryType,
-          'battery_price': double.tryParse(_batteryPriceController.text.trim()) ?? 0.0,
+          'battery_price': batteryPrice,
           'battery_notes': _batteryNotesController.text.trim().isEmpty ? null : _batteryNotesController.text.trim(),
           'battery_sale_date': _saleDate.toIso8601String().split('T')[0],
           'battery_service_reminder_interval_months': _serviceReminderInterval,
           'battery_water_check_interval_months': _batteryType == 'INVERTER' ? _waterCheckInterval : null,
 
           // Udhari / payments
-          'has_udhari': _hasUdhari,
+          'has_udhari': true, // Always true to create a payment record
         };
 
-        if (_hasUdhari) {
-          final totalAmt = double.tryParse(_totalAmountController.text.trim()) ?? 0.0;
+        if (_paymentMode == 'Udhari') {
+          final totalAmt = double.tryParse(_totalAmountController.text.trim()) ?? batteryPrice;
           final paidAmt = double.tryParse(_paidAmountController.text.trim()) ?? 0.0;
           payload['payment_total_amount'] = totalAmt;
           payload['payment_paid_amount'] = paidAmt;
@@ -221,6 +246,11 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
           if (_dueDate != null) {
             payload['payment_due_date'] = _dueDate!.toIso8601String().split('T')[0];
           }
+        } else {
+          payload['payment_total_amount'] = batteryPrice;
+          payload['payment_paid_amount'] = batteryPrice;
+          payload['payment_method'] = _paymentMode.toUpperCase();
+          payload['payment_reminder_note'] = 'Fully paid via $_paymentMode';
         }
 
         await operations.createCombinedCustomer(payload);
@@ -369,6 +399,42 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                           return null;
                         },
                         enabled: !_isSubmitting,
+                      ),
+                      const SizedBox(height: 16),
+
+                      DropdownButtonFormField<String>(
+                        value: _paymentMode,
+                        decoration: const InputDecoration(
+                          labelText: 'Payment Mode *',
+                          prefixIcon: Icon(Icons.payment_outlined, size: 20),
+                        ),
+                        items: _paymentModes.map((mode) {
+                          return DropdownMenuItem(
+                            value: mode,
+                            child: Text(mode),
+                          );
+                        }).toList(),
+                        onChanged: _isSubmitting
+                            ? null
+                            : (val) {
+                                if (val != null) {
+                                  setState(() {
+                                    _paymentMode = val;
+                                    _hasUdhari = (val == 'Udhari');
+                                    
+                                    // If we switch away from Udhari, set total and paid to battery price
+                                    final priceText = _batteryPriceController.text.trim();
+                                    if (val != 'Udhari') {
+                                      _totalAmountController.text = priceText;
+                                      _paidAmountController.text = priceText;
+                                    } else {
+                                      _totalAmountController.text = priceText;
+                                      _paidAmountController.text = '0.0';
+                                    }
+                                    _onPaymentAmountsChanged();
+                                  });
+                                }
+                              },
                       ),
                       const SizedBox(height: 16),
 
