@@ -67,7 +67,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
   final List<String> _vehicleTypes = ['2W', '4W', 'TRUCK', 'INVERTER', 'OTHER'];
   final List<String> _purchaseTypes = ['RETAIL', 'SHOP'];
   
-  final List<int> _warrantyOptions = [6, 12, 18, 24, 30, 36, 48, 60, 72];
+  final List<int> _warrantyOptions = [0, 6, 12, 18, 24, 30, 36, 48, 60, 72];
   final List<String> _batteryTypes = ['2W', '4W', 'TRUCK', 'INVERTER'];
   final List<String> _paymentMethods = ['CASH', 'UPI', 'CARD', 'NET BANKING'];
 
@@ -601,7 +601,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                                 items: _warrantyOptions.map((months) {
                                   return DropdownMenuItem(
                                     value: months,
-                                    child: Text('$months Months'),
+                                    child: Text(months == 0 ? 'No Warranty' : '$months Months'),
                                   );
                                 }).toList(),
                                 onChanged: _isSubmitting

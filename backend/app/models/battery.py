@@ -35,8 +35,8 @@ class BatteryCreate(BaseModel):
     @field_validator("warranty_months")
     @classmethod
     def validate_warranty_months(cls, v: int) -> int:
-        if v <= 0:
-            raise ValueError("warranty_months must be a positive integer")
+        if v < 0:
+            raise ValueError("warranty_months must be a non-negative integer")
         return v
 
     @field_validator("serial_number")

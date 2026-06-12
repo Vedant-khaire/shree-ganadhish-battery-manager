@@ -180,7 +180,7 @@ class _BatteryFormScreenState extends ConsumerState<BatteryFormScreen> {
     final warrantyText = _warrantyController.text.trim();
     if (warrantyText.isEmpty) return preview;
     final warrantyMonths = int.tryParse(warrantyText);
-    if (warrantyMonths == null || warrantyMonths <= 0) return preview;
+    if (warrantyMonths == null || warrantyMonths < 0) return preview;
 
     DateTime saleDate;
     try {
@@ -608,8 +608,8 @@ class _BatteryFormScreenState extends ConsumerState<BatteryFormScreen> {
                                   return 'Please enter guarantee period';
                                 }
                                 final months = int.tryParse(value.trim());
-                                if (months == null || months <= 0) {
-                                  return 'Must be a positive whole number';
+                                if (months == null || months < 0) {
+                                  return 'Must be a non-negative whole number';
                                 }
                                 return null;
                               },

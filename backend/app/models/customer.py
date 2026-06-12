@@ -205,8 +205,8 @@ class CustomerCombinedCreate(BaseModel):
                 raise ValueError("Battery Model is required when registering a battery")
             if not self.battery_serial_number:
                 raise ValueError("Battery Serial Number is required when registering a battery")
-            if not self.battery_warranty_months or self.battery_warranty_months <= 0:
-                raise ValueError("Warranty months must be greater than 0")
+            if self.battery_warranty_months is None or self.battery_warranty_months < 0:
+                raise ValueError("Warranty months must be a non-negative integer")
             if not self.battery_type:
                 raise ValueError("Battery Type is required when registering a battery")
             

@@ -204,6 +204,11 @@ def update_customer(
     _require_customer(db, customer_id)
 
     updates = {k: v for k, v in data.model_dump().items() if v is not None}
+    
+    from datetime import date
+    if "scrap_received_date" in updates and isinstance(updates["scrap_received_date"], date):
+        updates["scrap_received_date"] = updates["scrap_received_date"].isoformat()
+
     if not updates:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
