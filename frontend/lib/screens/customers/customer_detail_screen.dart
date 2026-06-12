@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -182,45 +183,99 @@ class CustomerDetailScreen extends ConsumerWidget {
 
   void _settlePayment(BuildContext context, WidgetRef ref, String paymentId, double pendingAmount) {
     String selectedMode = 'CASH';
+    final TextEditingController amountController = TextEditingController(text: pendingAmount.toStringAsFixed(2));
+    final formKey = GlobalKey<FormState>();
+
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setState) {
+          final inputVal = double.tryParse(amountController.text) ?? 0.0;
+          final remainingAmount = (pendingAmount - inputVal).clamp(0.0, double.infinity);
+
           return AlertDialog(
-            title: const Text('Settle Udhari?'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Mark this payment as settled? This will record that the pending balance of '
-                  '${FormatUtils.formatIndianCurrency(pendingAmount)} has been paid in full.',
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Payment Mode *',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  value: selectedMode,
-                  decoration: const InputDecoration(
-                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    border: OutlineInputBorder(),
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 'CASH', child: Text('Cash')),
-                    DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
+            title: const Text('Settle Udhari'),
+            content: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Outstanding Balance: ${FormatUtils.formatIndianCurrency(pendingAmount)}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: amountController,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                      ],
+                      decoration: const InputDecoration(
+                        labelText: 'Amount Paid (₹) *',
+                        border: OutlineInputBorder(),
+                        prefixText: '₹ ',
+                      ),
+                      onChanged: (val) {
+                        setState(() {});
+                      },
+                      validator: (val) {
+                        if (val == null || val.trim().isEmpty) {
+                          return 'Please enter the amount paid';
+                        }
+                        final amt = double.tryParse(val.trim());
+                        if (amt == null) {
+                          return 'Please enter a valid number';
+                        }
+                        if (amt <= 0) {
+                          return 'Amount must be greater than zero';
+                        }
+                        if (amt > pendingAmount + 0.01) {
+                          return 'Amount cannot exceed pending balance';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      remainingAmount <= 0.01
+                          ? 'This will settle the outstanding balance in full.'
+                          : 'Remaining Balance: ${FormatUtils.formatIndianCurrency(remainingAmount)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: remainingAmount <= 0.01 ? Colors.green.shade700 : Colors.orange.shade800,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Payment Mode *',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      value: selectedMode,
+                      decoration: const InputDecoration(
+                        contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                        DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
+                      ],
+                      onChanged: (val) {
+                        if (val != null) {
+                          setState(() {
+                            selectedMode = val;
+                          });
+                        }
+                      },
+                    ),
                   ],
-                  onChanged: (val) {
-                    if (val != null) {
-                      setState(() {
-                        selectedMode = val;
-                      });
-                    }
-                  },
                 ),
-              ],
+              ),
             ),
             actions: [
               TextButton(
@@ -233,19 +288,27 @@ class CustomerDetailScreen extends ConsumerWidget {
                   foregroundColor: Colors.white,
                 ),
                 onPressed: () async {
-                  Navigator.pop(ctx);
-                  try {
-                    await ref.read(paymentOperationsProvider).settlePayment(paymentId, customerId, selectedMode);
-                    if (context.mounted) {
-                      ToastHelper.show(context, 'Payment settled successfully');
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      ToastHelper.show(
-                        context,
-                        'Error settling payment: ${ErrorParser.parse(e)}',
-                        isError: true,
-                      );
+                  if (formKey.currentState?.validate() ?? false) {
+                    final enteredAmount = double.parse(amountController.text.trim());
+                    Navigator.pop(ctx);
+                    try {
+                      await ref.read(paymentOperationsProvider).settlePayment(
+                            paymentId,
+                            customerId,
+                            selectedMode,
+                            amount: enteredAmount,
+                          );
+                      if (context.mounted) {
+                        ToastHelper.show(context, 'Payment updated successfully');
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ToastHelper.show(
+                          context,
+                          'Error settling payment: ${ErrorParser.parse(e)}',
+                          isError: true,
+                        );
+                      }
                     }
                   }
                 },

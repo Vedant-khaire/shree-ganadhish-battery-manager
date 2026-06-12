@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, Query, Request
+from typing import Optional
 
 from app.auth import get_current_admin, _detect_device
 from app.database import get_db
@@ -70,10 +71,11 @@ def settle(
     payment_id: str,
     request: Request,
     payment_mode: str = Query(default="Cash", description="Payment mode: CASH or ONLINE"),
+    amount: Optional[float] = Query(default=None, description="Partial payment amount. If omitted, fully settles pending amount."),
     _: str = Depends(get_current_admin),
 ):
-    """Mark udhari as fully paid. Sets paid_amount = total_amount, pending = 0."""
-    return settle_payment(get_db(), payment_id, payment_mode=payment_mode, device=_detect_device(request))
+    """Mark udhari as paid. Allows full or partial payment."""
+    return settle_payment(get_db(), payment_id, payment_mode=payment_mode, amount=amount, device=_detect_device(request))
 
 
 @router.patch("/{payment_id}/archive")

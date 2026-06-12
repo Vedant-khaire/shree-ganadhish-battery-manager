@@ -132,17 +132,20 @@ class PaymentOperations {
     _ref.invalidate(dashboardProvider);
   }
 
-  Future<void> settlePayment(String id, String customerId, String paymentMode) async {
+  Future<void> settlePayment(String id, String customerId, String paymentMode, {double? amount}) async {
     // 1. Optimistic details cache update
     final detailState = _ref.read(customerDetailsProvider(customerId));
     if (detailState is AsyncData<CustomerWithDetails>) {
       final details = detailState.value;
       final updatedPayments = details.payments.map((p) {
         if (p.id == id) {
+          final settleAmt = amount ?? p.pendingAmount;
+          final newPending = (p.pendingAmount - settleAmt).clamp(0.0, double.infinity);
+          final newPaid = p.paidAmount + settleAmt;
           return p.copyWith(
-            isSettled: true,
-            paidAmount: p.totalAmount,
-            pendingAmount: 0.0,
+            isSettled: newPending <= 0.01,
+            paidAmount: newPaid,
+            pendingAmount: newPending,
             paymentMode: paymentMode,
           );
         }
@@ -165,10 +168,13 @@ class PaymentOperations {
       final paginated = listState.value;
       final updatedList = paginated.data.map((p) {
         if (p.id == id) {
+          final settleAmt = amount ?? p.pendingAmount;
+          final newPending = (p.pendingAmount - settleAmt).clamp(0.0, double.infinity);
+          final newPaid = p.paidAmount + settleAmt;
           return p.copyWith(
-            isSettled: true,
-            paidAmount: p.totalAmount,
-            pendingAmount: 0.0,
+            isSettled: newPending <= 0.01,
+            paidAmount: newPaid,
+            pendingAmount: newPending,
             paymentMode: paymentMode,
           );
         }
@@ -188,7 +194,10 @@ class PaymentOperations {
       final apiClient = _ref.read(apiClientProvider);
       await apiClient.dio.patch(
         '/payments/$id/settle',
-        queryParameters: {'payment_mode': paymentMode},
+        queryParameters: {
+          'payment_mode': paymentMode,
+          if (amount != null) 'amount': amount,
+        },
       );
       
       // Invalidate to fetch exact sync in background

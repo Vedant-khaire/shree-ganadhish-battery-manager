@@ -172,43 +172,100 @@ class _FollowUpCenterScreenState extends ConsumerState<FollowUpCenterScreen> wit
   // Settle Outstanding Payment
   void _settleUdhari(String paymentId, String customerId, String name, double amount) {
     String selectedMode = 'CASH';
+    final TextEditingController amountController = TextEditingController(text: amount.toStringAsFixed(2));
+    final formKey = GlobalKey<FormState>();
+
     showDialog(
       context: context,
       builder: (BuildContext ctx) {
         return StatefulBuilder(
-          builder: (context, setState) {
+          builder: (context, dialogSetState) {
+            final inputVal = double.tryParse(amountController.text) ?? 0.0;
+            final remainingAmount = (amount - inputVal).clamp(0.0, double.infinity);
+
             return AlertDialog(
-              title: const Text('Settle Udhari Payment?'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Are you sure you want to mark ₹${amount.toStringAsFixed(2)} outstanding debt for "$name" as fully paid? This will auto-complete all associated follow-ups.'),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Payment Mode *',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    value: selectedMode,
-                    decoration: const InputDecoration(
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'CASH', child: Text('Cash')),
-                      DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
+              title: const Text('Settle Udhari Payment'),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Outstanding balance for "$name": ${FormatUtils.formatIndianCurrency(amount)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: amountController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'Amount Paid (₹) *',
+                          border: OutlineInputBorder(),
+                          prefixText: '₹ ',
+                        ),
+                        onChanged: (val) {
+                          dialogSetState(() {});
+                        },
+                        validator: (val) {
+                          if (val == null || val.trim().isEmpty) {
+                            return 'Please enter the amount paid';
+                          }
+                          final amt = double.tryParse(val.trim());
+                          if (amt == null) {
+                            return 'Please enter a valid number';
+                          }
+                          if (amt <= 0) {
+                            return 'Amount must be greater than zero';
+                          }
+                          if (amt > amount + 0.01) {
+                            return 'Amount cannot exceed pending balance';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        remainingAmount <= 0.01
+                            ? 'This will settle the outstanding balance in full.'
+                            : 'Remaining Balance: ${FormatUtils.formatIndianCurrency(remainingAmount)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: remainingAmount <= 0.01 ? Colors.green.shade700 : Colors.orange.shade800,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Payment Mode *',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        value: selectedMode,
+                        decoration: const InputDecoration(
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                          DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            dialogSetState(() {
+                              selectedMode = val;
+                            });
+                          }
+                        },
+                      ),
                     ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          selectedMode = val;
-                        });
-                      }
-                    },
                   ),
-                ],
+                ),
               ),
               actions: [
                 TextButton(
@@ -221,28 +278,36 @@ class _FollowUpCenterScreenState extends ConsumerState<FollowUpCenterScreen> wit
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () async {
-                    Navigator.of(ctx).pop();
-                    this.setState(() {
-                      _isActionExecuting = true;
-                    });
-                    try {
-                      await ref.read(paymentOperationsProvider).settlePayment(paymentId, customerId, selectedMode);
-                      await _loadPaymentsCache();
-                      if (mounted) {
-                        ToastHelper.show(context, 'Payment settled and recorded successfully');
+                    if (formKey.currentState?.validate() ?? false) {
+                      final enteredAmount = double.parse(amountController.text.trim());
+                      Navigator.of(ctx).pop();
+                      this.setState(() {
+                        _isActionExecuting = true;
+                      });
+                      try {
+                        await ref.read(paymentOperationsProvider).settlePayment(
+                              paymentId,
+                              customerId,
+                              selectedMode,
+                              amount: enteredAmount,
+                            );
+                        await _loadPaymentsCache();
+                        if (mounted) {
+                          ToastHelper.show(context, 'Payment updated successfully');
+                        }
+                      } catch (e) {
+                        if (mounted) {
+                          ToastHelper.show(context, 'Error: ${ErrorParser.parse(e)}', isError: true);
+                        }
+                      } finally {
+                        if (mounted) {
+                          this.setState(() {
+                            _isActionExecuting = false;
+                          });
+                        }
+                        ref.invalidate(reminderListProvider);
+                        ref.invalidate(dashboardProvider);
                       }
-                    } catch (e) {
-                      if (mounted) {
-                        ToastHelper.show(context, 'Error: ${ErrorParser.parse(e)}', isError: true);
-                      }
-                    } finally {
-                      if (mounted) {
-                        this.setState(() {
-                          _isActionExecuting = false;
-                        });
-                      }
-                      ref.invalidate(reminderListProvider);
-                      ref.invalidate(dashboardProvider);
                     }
                   },
                   child: const Text('Confirm Settle'),

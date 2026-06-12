@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../providers/reminder_provider.dart';
+import '../../providers/payment_provider.dart';
 import '../../providers/message_template_provider.dart';
 import '../../models/reminder.dart';
 import '../../widgets/app_scaffold.dart';
@@ -11,7 +12,6 @@ import '../../widgets/empty_state.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/toast_helper.dart';
 import '../../core/url_helper.dart';
-import '../../core/api_client.dart';
 import '../../core/utils.dart';
 import '../../core/theme.dart';
 
@@ -455,45 +455,100 @@ class _ReminderListScreenState extends ConsumerState<ReminderListScreen> {
 
   void _showSettleConfirmDialog(BuildContext context, WidgetRef ref, String paymentId, String customerId, String name, double amount) {
     String selectedMode = 'CASH';
+    final TextEditingController amountController = TextEditingController(text: amount.toStringAsFixed(2));
+    final formKey = GlobalKey<FormState>();
+
     showDialog(
       context: context,
       builder: (BuildContext ctx) {
         return StatefulBuilder(
-          builder: (context, setState) {
+          builder: (context, dialogSetState) {
+            final inputVal = double.tryParse(amountController.text) ?? 0.0;
+            final remainingAmount = (amount - inputVal).clamp(0.0, double.infinity);
+
             return AlertDialog(
-              title: const Text('Settle Udhari?'),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Mark this pending balance of ${FormatUtils.formatIndianCurrency(amount)} for $name as paid in full?',
-                  ),
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Payment Mode *',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  const SizedBox(height: 8),
-                  DropdownButtonFormField<String>(
-                    value: selectedMode,
-                    decoration: const InputDecoration(
-                      contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      border: OutlineInputBorder(),
-                    ),
-                    items: const [
-                      DropdownMenuItem(value: 'CASH', child: Text('Cash')),
-                      DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
+              title: const Text('Settle Udhari'),
+              content: Form(
+                key: formKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Outstanding balance for $name: ${FormatUtils.formatIndianCurrency(amount)}',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: amountController,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        inputFormatters: [
+                          FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'Amount Paid (₹) *',
+                          border: OutlineInputBorder(),
+                          prefixText: '₹ ',
+                        ),
+                        onChanged: (val) {
+                          dialogSetState(() {});
+                        },
+                        validator: (val) {
+                          if (val == null || val.trim().isEmpty) {
+                            return 'Please enter the amount paid';
+                          }
+                          final amt = double.tryParse(val.trim());
+                          if (amt == null) {
+                            return 'Please enter a valid number';
+                          }
+                          if (amt <= 0) {
+                            return 'Amount must be greater than zero';
+                          }
+                          if (amt > amount + 0.01) {
+                            return 'Amount cannot exceed pending balance';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        remainingAmount <= 0.01
+                            ? 'This will settle the outstanding balance in full.'
+                            : 'Remaining Balance: ${FormatUtils.formatIndianCurrency(remainingAmount)}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: remainingAmount <= 0.01 ? Colors.green.shade700 : Colors.orange.shade800,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Payment Mode *',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        value: selectedMode,
+                        decoration: const InputDecoration(
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          border: OutlineInputBorder(),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'CASH', child: Text('Cash')),
+                          DropdownMenuItem(value: 'ONLINE', child: Text('Online')),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            dialogSetState(() {
+                              selectedMode = val;
+                            });
+                          }
+                        },
+                      ),
                     ],
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          selectedMode = val;
-                        });
-                      }
-                    },
                   ),
-                ],
+                ),
               ),
               actions: [
                 TextButton(
@@ -506,27 +561,27 @@ class _ReminderListScreenState extends ConsumerState<ReminderListScreen> {
                     foregroundColor: Colors.white,
                   ),
                   onPressed: () async {
-                    Navigator.of(ctx).pop();
-                    try {
-                      final apiClient = ref.read(apiClientProvider);
-                      await apiClient.dio.patch(
-                        '/payments/$paymentId/settle',
-                        queryParameters: {'payment_mode': selectedMode},
-                      );
-                      
-                      ref.invalidate(reminderListProvider);
-                      ref.invalidate(reminderStatsProvider);
-                      
-                      if (context.mounted) {
-                        ToastHelper.show(context, 'Payment settled successfully');
-                      }
-                    } catch (e) {
-                      if (context.mounted) {
-                        ToastHelper.show(
-                          context,
-                          'Error: ${ErrorParser.parse(e)}',
-                          isError: true,
-                        );
+                    if (formKey.currentState?.validate() ?? false) {
+                      final enteredAmount = double.parse(amountController.text.trim());
+                      Navigator.of(ctx).pop();
+                      try {
+                        await ref.read(paymentOperationsProvider).settlePayment(
+                              paymentId,
+                              customerId,
+                              selectedMode,
+                              amount: enteredAmount,
+                            );
+                        if (context.mounted) {
+                          ToastHelper.show(context, 'Payment updated successfully');
+                        }
+                      } catch (e) {
+                        if (context.mounted) {
+                          ToastHelper.show(
+                            context,
+                            'Error: ${ErrorParser.parse(e)}',
+                            isError: true,
+                          );
+                        }
                       }
                     }
                   },

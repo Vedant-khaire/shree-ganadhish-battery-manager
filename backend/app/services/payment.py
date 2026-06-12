@@ -1,5 +1,6 @@
 from fastapi import HTTPException, status
 from supabase import Client
+from typing import Optional
 
 from app.models.payment import PaymentCreate, PaymentUpdate, PaymentResponse
 
@@ -280,8 +281,8 @@ def update_payment(
     return {"message": "Payment updated successfully", "data": updated}
 
 
-def settle_payment(db: Client, payment_id: str, payment_mode: str, device: str = "desktop") -> dict:
-    """Mark payment as fully settled and log transaction."""
+def settle_payment(db: Client, payment_id: str, payment_mode: str, amount: Optional[float] = None, device: str = "desktop") -> dict:
+    """Mark payment as settled (partially or fully) and log transaction."""
     existing = _require_payment(db, payment_id)
 
     if existing.get("is_settled"):
@@ -289,28 +290,52 @@ def settle_payment(db: Client, payment_id: str, payment_mode: str, device: str =
 
     total = float(existing["total_amount"])
     pending = float(existing["pending_amount"])
-    
+    current_paid = float(existing["paid_amount"])
+
+    # If amount is not specified, default to full pending amount
+    if amount is None:
+        pay_amount = pending
+        is_full_settlement = True
+    else:
+        pay_amount = float(amount)
+        if pay_amount <= 0:
+            raise HTTPException(status_code=400, detail="Payment amount must be greater than zero")
+        if pay_amount > pending + 0.01:
+            raise HTTPException(status_code=400, detail="Payment amount exceeds pending amount")
+        is_full_settlement = abs(pay_amount - pending) < 0.01
+
+    new_paid = current_paid + pay_amount
+    new_pending = max(0.0, total - new_paid)
+    is_settled = is_full_settlement or (new_pending <= 0.01)
+
+    if is_settled:
+        new_pending = 0.0
+        new_paid = total
+
     db.table("payments").update({
-        "paid_amount": total,
-        "pending_amount": 0.0,
-        "is_settled": True,
+        "paid_amount": new_paid,
+        "pending_amount": new_pending,
+        "is_settled": is_settled,
         "payment_mode": payment_mode,
     }).eq("id", payment_id).execute()
 
-    # Log full settlement transaction
-    _log_transaction(db, payment_id, str(existing["customer_id"]), "PAYMENT", pending, "Full settlement payment", payment_mode=payment_mode)
+    # Log payment transaction
+    notes = "Full settlement payment" if is_settled else f"Partial payment towards outstanding Udhari balance"
+    _log_transaction(db, payment_id, str(existing["customer_id"]), "PAYMENT", pay_amount, notes, payment_mode=payment_mode)
 
-    # Settle all related reminders
-    try:
-        db.table("service_reminders").update({
-            "is_completed": True,
-            "notes": "Auto-completed: Payment settled"
-        }).eq("linked_payment_id", payment_id).eq("is_completed", False).execute()
-    except Exception:
-        pass
+    # Settle all related reminders ONLY if fully settled
+    if is_settled:
+        try:
+            db.table("service_reminders").update({
+                "is_completed": True,
+                "notes": "Auto-completed: Payment settled"
+            }).eq("linked_payment_id", payment_id).eq("is_completed", False).execute()
+        except Exception:
+            pass
 
-    _log(db, f"PAYMENT_SETTLED: {payment_id}", device)
-    return {"message": "Payment marked as settled"}
+    action_msg = "PAYMENT_SETTLED" if is_settled else f"PAYMENT_PARTIAL_PAID: {pay_amount}"
+    _log(db, f"{action_msg}: {payment_id}", device)
+    return {"message": "Payment recorded successfully"}
 
 
 def archive_payment(db: Client, payment_id: str, device: str = "desktop") -> dict:
