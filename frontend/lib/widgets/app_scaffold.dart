@@ -30,7 +30,6 @@ class AppScaffold extends ConsumerStatefulWidget {
 }
 
 class _AppScaffoldState extends ConsumerState<AppScaffold> {
-  bool _isMobileMenuExpanded = false;
   Timer? _refreshTimer;
   String? _lastRoute;
   StreamSubscription<void>? _pwaSubscription;
@@ -88,7 +87,7 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
   Widget build(BuildContext context) {
     final width = MediaQuery.of(context).size.width;
     final authState = ref.watch(authProvider);
-    final isDesktop = width > 800;
+    final isDesktop = width > 1000;
 
     final dashboardStateVal = ref.watch(dashboardProvider);
     final pendingPaymentsCount = dashboardStateVal.maybeWhen(
@@ -223,10 +222,8 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
       }
     });
 
-    Widget buildDrawerContent(bool showHeader, {bool isMobile = false}) {
+    Widget buildDrawerContent(bool showHeader) {
       final listContent = ListView(
-        shrinkWrap: isMobile,
-        physics: isMobile ? const NeverScrollableScrollPhysics() : null,
         padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
         children: [
           ...menuItems.map((item) {
@@ -252,10 +249,8 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                 selectedTileColor: const Color(0xFF334155),
                 trailing: buildBadge(item.route, pendingPaymentsCount, remindersCount, stockCount, shopUdhariCount),
                 onTap: () {
-                  if (isMobile) {
-                    setState(() {
-                      _isMobileMenuExpanded = false;
-                    });
+                  if (Navigator.canPop(context)) {
+                    Navigator.pop(context);
                   }
                   // Invalidate all primary list/stats providers on menu item click
                   ref.invalidate(dashboardProvider);
@@ -293,10 +288,8 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                 ),
                 tileColor: const Color(0xFF1E293B),
                 onTap: () {
-                  if (isMobile) {
-                    setState(() {
-                      _isMobileMenuExpanded = false;
-                    });
+                  if (Navigator.canPop(context)) {
+                    Navigator.pop(context);
                   }
                   PwaInstallHelper.promptInstall();
                 },
@@ -356,7 +349,6 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
       return Container(
         color: AppTheme.secondaryColor,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           children: [
             if (showHeader)
               Container(
@@ -390,10 +382,7 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
                   ],
                 ),
               ),
-            if (isMobile)
-              listContent
-            else
-              Expanded(child: listContent),
+            Expanded(child: listContent),
             userSection,
           ],
         ),
@@ -472,14 +461,6 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
             widget.title,
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
-          leading: IconButton(
-            icon: Icon(_isMobileMenuExpanded ? Icons.close : Icons.menu),
-            onPressed: () {
-              setState(() {
-                _isMobileMenuExpanded = !_isMobileMenuExpanded;
-              });
-            },
-          ),
           elevation: 0,
           actions: [
             IconButton(
@@ -515,39 +496,15 @@ class _AppScaffoldState extends ConsumerState<AppScaffold> {
             const SizedBox(width: 8),
           ],
         ),
-        body: Column(
-          children: [
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              curve: Curves.easeInOut,
-              height: _isMobileMenuExpanded ? 580.0 : 0.0,
-              clipBehavior: Clip.antiAlias,
-              decoration: const BoxDecoration(
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black12,
-                    blurRadius: 4,
-                    offset: Offset(0, 2),
-                  )
-                ],
-              ),
-              child: SingleChildScrollView(
-                physics: const NeverScrollableScrollPhysics(),
-                child: SizedBox(
-                  height: 580.0,
-                  child: buildDrawerContent(false, isMobile: true),
-                ),
-              ),
-            ),
-            Expanded(
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 1400),
-                  child: widget.child,
-                ),
-              ),
-            ),
-          ],
+        drawer: Drawer(
+          width: 260,
+          child: buildDrawerContent(true),
+        ),
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1400),
+            child: widget.child,
+          ),
         ),
       );
     }

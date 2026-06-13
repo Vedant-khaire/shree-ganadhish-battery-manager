@@ -48,6 +48,7 @@ def get_all_stock(
         db.table("battery_stock")
         .select("*", count="exact")
         .eq("is_archived", archived)
+        .order("created_at", desc=True)
     )
 
     if search:

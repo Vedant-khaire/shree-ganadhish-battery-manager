@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import 'core/constants.dart';
 import 'core/theme.dart';
+import 'services/notification_service.dart';
 import 'providers/auth_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/login_screen.dart';
@@ -181,11 +182,41 @@ final routerProvider = Provider<GoRouter>((ref) {
   );
 });
 
-class App extends ConsumerWidget {
+class App extends ConsumerStatefulWidget {
   const App({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<App> createState() => _AppState();
+}
+
+class _AppState extends ConsumerState<App> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    
+    // Sync notifications on app startup after the first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationService.instance.syncWithBackend();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint('[LIFECYCLE] App resumed from background. Syncing notifications...');
+      NotificationService.instance.syncWithBackend();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeProvider);
 

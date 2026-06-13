@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../providers/customer_provider.dart';
+import '../../providers/shop_provider.dart';
 import '../../models/customer.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_button.dart';
@@ -317,6 +318,7 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
   }
 
   Widget _buildScaffold(BuildContext context, bool isEditMode) {
+    final stockModelsAsync = ref.watch(activeStockModelsProvider);
     return AppScaffold(
       title: isEditMode ? 'Edit Customer' : 'Add Customer & Sale',
       child: Center(
@@ -555,18 +557,131 @@ class _CustomerFormScreenState extends ConsumerState<CustomerFormScreen> {
                         Row(
                           children: [
                             Expanded(
-                              child: AppInput(
-                                controller: _batteryModelController,
-                                labelText: 'Battery Model *',
-                                prefixIcon: Icons.model_training_outlined,
-                                textCapitalization: TextCapitalization.characters,
-                                validator: (value) {
-                                  if (!isEditMode && (value == null || value.trim().isEmpty)) {
-                                    return 'Battery Model is required';
-                                  }
-                                  return null;
+                              child: stockModelsAsync.when(
+                                data: (stockItems) {
+                                  return Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Autocomplete<String>(
+                                        optionsBuilder: (TextEditingValue textEditingValue) {
+                                          final cleanText = textEditingValue.text.trim().toLowerCase();
+                                          return stockItems
+                                              .map((e) => e.modelName)
+                                              .where((model) => model.toLowerCase().contains(cleanText));
+                                        },
+                                        textEditingController: _batteryModelController,
+                                        onSelected: (String selection) {
+                                          setState(() {
+                                            _batteryModelController.text = selection;
+                                          });
+                                        },
+                                        optionsViewBuilder: (context, onSelected, options) {
+                                          return Align(
+                                            alignment: Alignment.topLeft,
+                                            child: Material(
+                                              elevation: 4.0,
+                                              borderRadius: BorderRadius.circular(8),
+                                              color: Colors.white,
+                                              child: Container(
+                                                width: 300,
+                                                constraints: const BoxConstraints(maxHeight: 200),
+                                                decoration: BoxDecoration(
+                                                  border: Border.all(color: Colors.grey.shade200),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: ListView.builder(
+                                                  padding: EdgeInsets.zero,
+                                                  shrinkWrap: true,
+                                                  itemCount: options.length,
+                                                  itemBuilder: (BuildContext context, int index) {
+                                                    final String option = options.elementAt(index);
+                                                    final matchedList = stockItems.where((item) => item.modelName == option).toList();
+                                                    final stockItem = matchedList.isNotEmpty ? matchedList.first : null;
+                                                    return ListTile(
+                                                      title: Text(option, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                                      subtitle: Text(stockItem != null ? 'Stock: ${stockItem.quantity} units' : 'Stock: 0 units'),
+                                                      onTap: () {
+                                                        onSelected(option);
+                                                      },
+                                                    );
+                                                  },
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                        fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                                          return TextFormField(
+                                            controller: textEditingController,
+                                            focusNode: focusNode,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Battery Model *',
+                                              prefixIcon: Icon(Icons.model_training_outlined, size: 20),
+                                            ),
+                                            textCapitalization: TextCapitalization.characters,
+                                            enabled: !_isSubmitting,
+                                            onChanged: (v) {
+                                              setState(() {});
+                                            },
+                                            validator: (value) {
+                                              if (!isEditMode && (value == null || value.trim().isEmpty)) {
+                                                return 'Battery Model is required';
+                                              }
+                                              return null;
+                                            },
+                                          );
+                                        },
+                                      ),
+                                      if (_batteryModelController.text.trim().isNotEmpty) ...[
+                                        const SizedBox(height: 6),
+                                        Builder(
+                                          builder: (context) {
+                                            final enteredModel = _batteryModelController.text.trim().toUpperCase();
+                                            final matchedList = stockItems
+                                                .where((item) => item.modelName.toUpperCase() == enteredModel)
+                                                .toList();
+                                            final matchedStockItem = matchedList.isNotEmpty ? matchedList.first : null;
+
+                                            if (matchedStockItem != null) {
+                                              return Text(
+                                                'Available in stock: ${matchedStockItem.quantity} units',
+                                                style: const TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.bold),
+                                              );
+                                            } else {
+                                              return Text(
+                                                'Battery model not in stock. Saving as custom model.',
+                                                style: TextStyle(color: Colors.amber.shade900, fontSize: 13, fontWeight: FontWeight.bold),
+                                              );
+                                            }
+                                          },
+                                        ),
+                                      ],
+                                    ],
+                                  );
                                 },
-                                enabled: !_isSubmitting,
+                                loading: () => const Center(
+                                  child: Padding(
+                                    padding: EdgeInsets.all(8.0),
+                                    child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primaryColor),
+                                  ),
+                                ),
+                                error: (err, st) => TextFormField(
+                                  controller: _batteryModelController,
+                                  decoration: InputDecoration(
+                                    labelText: 'Battery Model *',
+                                    prefixIcon: const Icon(Icons.model_training_outlined, size: 20),
+                                    helperText: 'Failed to load stock suggestions: $err',
+                                    helperStyle: const TextStyle(color: Colors.red),
+                                  ),
+                                  textCapitalization: TextCapitalization.characters,
+                                  enabled: !_isSubmitting,
+                                  validator: (value) {
+                                    if (!isEditMode && (value == null || value.trim().isEmpty)) {
+                                      return 'Battery Model is required';
+                                    }
+                                    return null;
+                                  },
+                                ),
                               ),
                             ),
                             const SizedBox(width: 16),
