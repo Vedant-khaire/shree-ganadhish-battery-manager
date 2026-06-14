@@ -51,6 +51,42 @@ def _normalize_payment_mode(mode: Optional[str]) -> str:
     return "Other"
 
 
+def _normalize_name(name: Optional[str]) -> str:
+    if not name:
+        return ""
+    return " ".join(str(name).split()).lower()
+
+
+def _extract_payment_mode(record: dict) -> str:
+    # 1. Try record's payment_mode
+    mode = record.get("payment_mode")
+    if mode:
+        return _normalize_payment_mode(mode)
+        
+    # 2. Try nested payment payment_mode
+    pay = record.get("payments") or record.get("payment") or {}
+    if isinstance(pay, list) and pay:
+        pay = pay[0]
+    if isinstance(pay, dict):
+        mode = pay.get("payment_mode")
+        if mode:
+            return _normalize_payment_mode(mode)
+            
+    # 3. Try parsing from reminder_note or notes
+    note = record.get("reminder_note") or ""
+    if not note and isinstance(pay, dict):
+        note = pay.get("reminder_note") or ""
+    if not note:
+        note = record.get("notes") or ""
+        
+    import re
+    match = re.search(r"\[Method:\s*([^\]\s]+)", note, re.IGNORECASE)
+    if match:
+        return _normalize_payment_mode(match.group(1))
+        
+    return "Other"
+
+
 def _is_in_date_range(dt_str: Optional[str], date_from: Optional[str], date_to: Optional[str]) -> bool:
     if not dt_str or dt_str == "N/A":
         return False
@@ -64,26 +100,56 @@ def _is_in_date_range(dt_str: Optional[str], date_from: Optional[str], date_to: 
 
 def _get_aggregated_customers(customers: list[dict], payments: list[dict], transactions: list[dict], reminders: list[dict]) -> list[dict]:
     grouped = {}
+    id_to_key = {}
+    mobile_to_key = {}
+    name_to_key = {}
     
-    def get_key(c_id, mobile, name):
-        if c_id:
-            return f"id_{c_id}"
-        elif mobile and mobile != "N/A":
-            return f"mobile_{mobile}"
-        elif name and name != "N/A":
-            return f"name_{name.strip().lower()}"
+    def find_existing_key(c_id, mobile, name):
+        if c_id and str(c_id) in id_to_key:
+            return id_to_key[str(c_id)]
+        if mobile and str(mobile).strip() and str(mobile).strip() != "N/A":
+            m_clean = str(mobile).strip()
+            if m_clean in mobile_to_key:
+                return mobile_to_key[m_clean]
+        if name and str(name).strip() and str(name).strip().lower() != "n/a":
+            n_clean = _normalize_name(name)
+            if n_clean in name_to_key:
+                return name_to_key[n_clean]
         return None
-        
-    # A. Seed groups with customers and their batteries
+
+    def register_keys(key, c_id, mobile, name):
+        if c_id:
+            id_to_key[str(c_id)] = key
+        if mobile and str(mobile).strip() and str(mobile).strip() != "N/A":
+            mobile_to_key[str(mobile).strip()] = key
+        if name and str(name).strip() and str(name).strip().lower() != "n/a":
+            name_to_key[_normalize_name(name)] = key
+
+    # Build a lookup of average total_amount per battery model name
+    model_prices = {}
+    for p in payments:
+        b = p.get("batteries") or p.get("battery")
+        if isinstance(b, list) and b:
+            b = b[0]
+        if isinstance(b, dict):
+            model = (b.get("model_number") or b.get("model_name") or "").strip().upper()
+            amt = float(p.get("total_amount") or 0.0)
+            if model and amt > 0:
+                model_prices.setdefault(model, []).append(amt)
+                
+    model_fallback_price = {}
+    for model, prices in model_prices.items():
+        model_fallback_price[model] = round(sum(prices) / len(prices), 2)
+
+    # First pass: seed groups with customers
     for c in customers:
         c_id = c.get("id")
         mobile = c.get("mobile")
         name = c.get("name")
-        key = get_key(c_id, mobile, name)
+        
+        key = find_existing_key(c_id, mobile, name)
         if not key:
-            continue
-            
-        if key not in grouped:
+            key = f"group_{c_id or len(grouped)}"
             grouped[key] = {
                 "id": c_id,
                 "name": name or "N/A",
@@ -103,8 +169,11 @@ def _get_aggregated_customers(customers: list[dict], payments: list[dict], trans
                 "transactions": [],
                 "reminders": []
             }
-            
+        
+        register_keys(key, c_id, mobile, name)
         g = grouped[key]
+        
+        # Merge basic fields
         for f in ["vehicle_no", "vehicle_type", "area", "pincode", "purchase_type"]:
             if not g[f] and c.get(f):
                 g[f] = c[f]
@@ -121,100 +190,258 @@ def _get_aggregated_customers(customers: list[dict], payments: list[dict], trans
         for b in (c.get("batteries") or []):
             if b not in g["batteries"]:
                 g["batteries"].append(b)
-                
-    # Create maps for fast lookups
-    cid_to_key = {}
-    for key, g in grouped.items():
-        if g["id"]:
-            cid_to_key[str(g["id"])] = key
-            
-    mobile_to_key = {}
-    name_to_key = {}
-    for key, g in grouped.items():
-        if g["mobile"] and g["mobile"] != "N/A":
-            mobile_to_key[g["mobile"]] = key
-        if g["name"] and g["name"] != "N/A":
-            name_to_key[g["name"].strip().lower()] = key
 
-    def find_group_key(rec_cid, rec_mobile, rec_name):
-        if rec_cid and str(rec_cid) in cid_to_key:
-            return cid_to_key[str(rec_cid)]
-        if rec_mobile and rec_mobile in mobile_to_key:
-            return mobile_to_key[rec_mobile]
-        if rec_name and rec_name.strip().lower() in name_to_key:
-            return name_to_key[rec_name.strip().lower()]
-        return None
-
-    # B. Map payments, transactions, reminders
+    # Second pass: map payments, transactions, reminders
     for p in payments:
         cid = p.get("customer_id")
         cust_metadata = p.get("customers") or p.get("customer") or {}
         p_mobile = p.get("customer_mobile") or cust_metadata.get("mobile")
         p_name = p.get("customer_name") or cust_metadata.get("name")
-        key = find_group_key(cid, p_mobile, p_name)
-        if key:
-            grouped[key]["payments"].append(p)
-            
+        
+        key = find_existing_key(cid, p_mobile, p_name)
+        if not key:
+            key = f"group_p_{len(grouped)}"
+            grouped[key] = {
+                "id": cid,
+                "name": p_name or "N/A",
+                "mobile": p_mobile or "N/A",
+                "vehicle_no": "",
+                "vehicle_type": "",
+                "area": "",
+                "pincode": "",
+                "purchase_type": "",
+                "created_at": p.get("created_at") or "",
+                "scrap_expected_value": 0.0,
+                "scrap_received_value": 0.0,
+                "scrap_payment_mode": "",
+                "scrap_received_date": "",
+                "batteries": [],
+                "payments": [],
+                "transactions": [],
+                "reminders": []
+            }
+        register_keys(key, cid, p_mobile, p_name)
+        grouped[key]["payments"].append(p)
+        
+        # Add payment's nested battery if missing
+        b = p.get("batteries") or p.get("battery")
+        if isinstance(b, list) and b:
+            b = b[0]
+        if isinstance(b, dict):
+            if b not in grouped[key]["batteries"]:
+                grouped[key]["batteries"].append(b)
+        
     for tx in transactions:
         cid = tx.get("customer_id")
         cust_metadata = tx.get("customers") or tx.get("customer") or {}
         tx_mobile = cust_metadata.get("mobile")
         tx_name = cust_metadata.get("name")
-        key = find_group_key(cid, tx_mobile, tx_name)
-        if key:
-            grouped[key]["transactions"].append(tx)
-            
+        
+        key = find_existing_key(cid, tx_mobile, tx_name)
+        if not key:
+            key = f"group_tx_{len(grouped)}"
+            grouped[key] = {
+                "id": cid,
+                "name": tx_name or "N/A",
+                "mobile": tx_mobile or "N/A",
+                "vehicle_no": "",
+                "vehicle_type": "",
+                "area": "",
+                "pincode": "",
+                "purchase_type": "",
+                "created_at": tx.get("created_at") or "",
+                "scrap_expected_value": 0.0,
+                "scrap_received_value": 0.0,
+                "scrap_payment_mode": "",
+                "scrap_received_date": "",
+                "batteries": [],
+                "payments": [],
+                "transactions": [],
+                "reminders": []
+            }
+        register_keys(key, cid, tx_mobile, tx_name)
+        grouped[key]["transactions"].append(tx)
+        
+        # Add transaction's payment's nested battery if missing
+        pay = tx.get("payments") or tx.get("payment") or {}
+        if isinstance(pay, list) and pay:
+            pay = pay[0]
+        if isinstance(pay, dict):
+            b = pay.get("batteries") or pay.get("battery")
+            if isinstance(b, list) and b:
+                b = b[0]
+            if isinstance(b, dict):
+                if b not in grouped[key]["batteries"]:
+                    grouped[key]["batteries"].append(b)
+        
     for r in reminders:
         cid = r.get("customer_id")
         r_mobile = r.get("mobile_number")
         r_name = r.get("customer_name")
-        key = find_group_key(cid, r_mobile, r_name)
-        if key:
-            grouped[key]["reminders"].append(r)
-            
-    # C. Build aggregates
+        
+        key = find_existing_key(cid, r_mobile, r_name)
+        if not key:
+            key = f"group_r_{len(grouped)}"
+            grouped[key] = {
+                "id": cid,
+                "name": r_name or "N/A",
+                "mobile": r_mobile or "N/A",
+                "vehicle_no": "",
+                "vehicle_type": "",
+                "area": "",
+                "pincode": "",
+                "purchase_type": "",
+                "created_at": r.get("created_at") or "",
+                "scrap_expected_value": 0.0,
+                "scrap_received_value": 0.0,
+                "scrap_payment_mode": "",
+                "scrap_received_date": "",
+                "batteries": [],
+                "payments": [],
+                "transactions": [],
+                "reminders": []
+            }
+        register_keys(key, cid, r_mobile, r_name)
+        grouped[key]["reminders"].append(r)
+
+    # Third pass: build aggregates
     aggregated = []
     today_str = date.today().isoformat()
     
     for key, g in grouped.items():
+        # Clean list duplicates
+        g["payments"] = list({p["id"]: p for p in g["payments"] if p.get("id")}.values())
+        g["transactions"] = list({t["id"]: t for t in g["transactions"] if t.get("id")}.values())
+        g["reminders"] = list({r["id"]: r for r in g["reminders"] if r.get("id")}.values())
+        
         # Battery models
         models = []
         for b in g["batteries"]:
-            model = b.get("model_name") or b.get("model_number")
+            model = b.get("model_number") or b.get("model_name")
             if model:
                 models.append(model)
+        for p in g["payments"]:
+            b = p.get("batteries") or p.get("battery")
+            if isinstance(b, list) and b:
+                b = b[0]
+            if isinstance(b, dict):
+                model = b.get("model_number") or b.get("model_name")
+                if model:
+                    models.append(model)
+                    
         unique_models = sorted(list(set(models)))
         g["battery_models_str"] = ", ".join(unique_models) if unique_models else "N/A"
         
         # Latest Purchase Date
-        sale_dates = [b.get("sale_date") for b in g["batteries"] if b.get("sale_date")]
-        g["latest_purchase_date"] = max(sale_dates)[:10] if sale_dates else "N/A"
+        sale_dates = []
+        for b in g["batteries"]:
+            if b.get("sale_date"):
+                sale_dates.append(b["sale_date"][:10])
+        for p in g["payments"]:
+            b = p.get("batteries") or p.get("battery")
+            if isinstance(b, list) and b:
+                b = b[0]
+            if isinstance(b, dict) and b.get("sale_date"):
+                sale_dates.append(b["sale_date"][:10])
+        g["latest_purchase_date"] = max(sale_dates) if sale_dates else "N/A"
         
         # Warranty Status
-        w_expiry_dates = [b.get("warranty_expiry") for b in g["batteries"] if b.get("warranty_expiry")]
-        any_active = any(exp[:10] >= today_str for exp in w_expiry_dates if exp)
+        w_expiry_dates = []
+        for b in g["batteries"]:
+            if b.get("warranty_expiry"):
+                w_expiry_dates.append(b["warranty_expiry"][:10])
+        for p in g["payments"]:
+            b = p.get("batteries") or p.get("battery")
+            if isinstance(b, list) and b:
+                b = b[0]
+            if isinstance(b, dict) and b.get("warranty_expiry"):
+                w_expiry_dates.append(b["warranty_expiry"][:10])
+        any_active = any(exp >= today_str for exp in w_expiry_dates if exp)
         g["warranty_status"] = "Active" if any_active else ("Expired" if w_expiry_dates else "N/A")
         
-        # Financial Totals
-        total_additions = sum(float(p.get("total_amount") or 0.0) for p in g["payments"])
-        total_payments = sum(float(p.get("paid_amount") or 0.0) for p in g["payments"])
-        outstanding_balance = sum(float(p.get("pending_amount") or 0.0) for p in g["payments"])
+        # Sort transactions chronologically (oldest first) to compute running balance
+        g_txs_sorted = sorted(g["transactions"], key=lambda x: x.get("created_at") or "")
+        bal = 0.0
+        for tx in g_txs_sorted:
+            tx["recovered_payment_mode"] = _extract_payment_mode(tx)
+            amt = float(tx.get("amount") or 0.0)
+            if tx.get("transaction_type") == "ADDITION":
+                bal += amt
+            elif tx.get("transaction_type") == "PAYMENT":
+                bal -= amt
+            tx["running_balance"] = round(bal, 2)
+
+        # Financial Totals & Validation
+        pay_additions = sum(float(p.get("total_amount") or 0.0) for p in g["payments"])
+        pay_payments = sum(float(p.get("paid_amount") or 0.0) for p in g["payments"])
         
-        g["total_additions"] = total_additions
-        g["total_payments"] = total_payments
-        g["outstanding_balance"] = outstanding_balance
+        tx_additions = sum(float(tx.get("amount") or 0.0) for tx in g["transactions"] if tx.get("transaction_type") == "ADDITION")
+        tx_payments = sum(float(tx.get("amount") or 0.0) for tx in g["transactions"] if tx.get("transaction_type") == "PAYMENT")
+        
+        total_bill = max(pay_additions, tx_additions)
+        total_paid = max(pay_payments, tx_payments)
+        
+        # Case B fallback for customers who bought batteries and paid immediately
+        if total_bill == 0.0 and g["batteries"]:
+            inferred_bill = 0.0
+            for b in g["batteries"]:
+                model = (b.get("model_number") or b.get("model_name") or "").strip().upper()
+                price = model_fallback_price.get(model)
+                if not price:
+                    b_type = (b.get("battery_type") or "").strip().upper()
+                    if b_type == "2W":
+                        price = 1500.0
+                    elif b_type == "4W":
+                        price = 5000.0
+                    else:
+                        price = 3000.0
+                inferred_bill += price
+            total_bill = inferred_bill
+            total_paid = inferred_bill
+            
+        # Strict Business validation: Total Bill >= Total Paid
+        if total_paid > total_bill:
+            total_bill = total_paid
+            
+        outstanding = round(total_bill - total_paid, 2)
+        if outstanding < 0:
+            outstanding = 0.0
+            
+        g["total_additions"] = total_bill
+        g["total_payments"] = total_paid
+        g["outstanding_balance"] = outstanding
         
         # Payment Modes Used
         modes = []
         for p in g["payments"]:
-            if p.get("payment_mode"):
-                modes.append(_normalize_payment_mode(p["payment_mode"]))
+            mode_p = p.get("payment_mode") or _extract_payment_mode(p)
+            if mode_p:
+                modes.append(mode_p)
         for tx in g["transactions"]:
-            if tx.get("payment_mode"):
-                modes.append(_normalize_payment_mode(tx["payment_mode"]))
+            mode_t = tx.get("recovered_payment_mode") or _extract_payment_mode(tx)
+            if mode_t:
+                modes.append(mode_t)
         unique_modes = sorted(list(set(modes)))
         g["payment_modes_str"] = ", ".join(unique_modes) if unique_modes else "N/A"
         
+        # Last Payment Mode & Date
+        payment_txs = [tx for tx in g["transactions"] if tx.get("transaction_type") == "PAYMENT" and tx.get("created_at")]
+        if payment_txs:
+            payment_txs_sorted = sorted(payment_txs, key=lambda x: x.get("created_at") or "")
+            last_pay_tx = payment_txs_sorted[-1]
+            g["last_payment_mode"] = last_pay_tx.get("recovered_payment_mode") or _extract_payment_mode(last_pay_tx)
+            g["last_payment_date"] = str(last_pay_tx.get("created_at"))[:10]
+        else:
+            # Fallback to payments table
+            pay_modes = []
+            for p in g["payments"]:
+                if float(p.get("paid_amount") or 0.0) > 0:
+                    pay_modes.append(p.get("payment_mode") or _extract_payment_mode(p))
+            g["last_payment_mode"] = pay_modes[-1] if pay_modes else "N/A"
+            
+            pay_dates = [p.get("updated_at") or p.get("created_at") for p in g["payments"] if float(p.get("paid_amount") or 0.0) > 0]
+            g["last_payment_date"] = str(max(pay_dates))[:10] if pay_dates else "N/A"
+            
         # Last Activity Date
         activity_dates = []
         if g["created_at"]:
@@ -244,7 +471,7 @@ def _get_aggregated_customers(customers: list[dict], payments: list[dict], trans
             addr_parts.append(g["pincode"])
         g["consolidated_address"] = ", ".join(addr_parts) if addr_parts else "N/A"
         
-        # Oldest unpaid creation date & due date
+        # Oldest unpaid date
         unpaid_dates = [p.get("created_at") for p in g["payments"] if not p.get("is_settled") and p.get("created_at")]
         g["oldest_unpaid_date"] = min(unpaid_dates)[:10] if unpaid_dates else None
         
@@ -357,7 +584,7 @@ def _apply_table_formatting(ws, start_row: int, headers: list[str], currency_col
 # Redesigned Sheet Builders
 # ---------------------------------------------------------------------------
 
-def _build_business_summary_sheet(ws, customers_rows, batteries_rows, payments_rows, scrap_rows, shops_rows, stock_rows) -> None:
+def _build_business_summary_sheet(ws, customers_rows, batteries_rows, payments_rows, scrap_rows, shops_rows, stock_rows, transactions_rows=None) -> None:
     ws.sheet_view.showGridLines = True
     
     ws.cell(row=2, column=2, value="SHREE GANADHISH BATTERY SERVICES").font = Font(bold=True, size=16, color="1E3A5F")
@@ -378,6 +605,31 @@ def _build_business_summary_sheet(ws, customers_rows, batteries_rows, payments_r
     _draw_dashboard_card(ws, start_col=2, start_row=12, label="WHOLESALE SHOPS", value=total_shops)
     _draw_dashboard_card(ws, start_col=5, start_row=12, label="TOTAL STOCK INVENTORY", value=total_stock)
     
+    # Calculate collections from transactions
+    collections = {
+        "Cash": 0.0,
+        "UPI": 0.0,
+        "Net Banking": 0.0,
+        "Card": 0.0,
+        "Cheque": 0.0,
+        "Other": 0.0
+    }
+    if transactions_rows:
+        for tx in transactions_rows:
+            if tx.get("transaction_type") == "PAYMENT":
+                mode = tx.get("recovered_payment_mode") or _extract_payment_mode(tx)
+                if mode in collections:
+                    collections[mode] += float(tx.get("amount") or 0.0)
+                else:
+                    collections["Other"] += float(tx.get("amount") or 0.0)
+                    
+    _draw_dashboard_card(ws, start_col=8, start_row=6, label="CASH COLLECTION", value=collections["Cash"], is_currency=True)
+    _draw_dashboard_card(ws, start_col=11, start_row=6, label="CARD COLLECTION", value=collections["Card"], is_currency=True)
+    _draw_dashboard_card(ws, start_col=8, start_row=9, label="UPI COLLECTION", value=collections["UPI"], is_currency=True)
+    _draw_dashboard_card(ws, start_col=11, start_row=9, label="CHEQUE COLLECTION", value=collections["Cheque"], is_currency=True)
+    _draw_dashboard_card(ws, start_col=8, start_row=12, label="NET BANKING", value=collections["Net Banking"], is_currency=True)
+    _draw_dashboard_card(ws, start_col=11, start_row=12, label="OTHER COLLECTION", value=collections["Other"], is_currency=True)
+    
     ws.column_dimensions["A"].width = 5
     ws.column_dimensions["B"].width = 20
     ws.column_dimensions["C"].width = 20
@@ -385,6 +637,12 @@ def _build_business_summary_sheet(ws, customers_rows, batteries_rows, payments_r
     ws.column_dimensions["E"].width = 20
     ws.column_dimensions["F"].width = 20
     ws.column_dimensions["G"].width = 5
+    ws.column_dimensions["H"].width = 20
+    ws.column_dimensions["I"].width = 20
+    ws.column_dimensions["J"].width = 5
+    ws.column_dimensions["K"].width = 20
+    ws.column_dimensions["L"].width = 20
+
 
 
 def _build_customers_sheet(ws, aggregated_customers: list[dict]) -> None:
@@ -518,36 +776,65 @@ def _build_batteries_sheet(ws, batteries_rows: list[dict]) -> None:
 
 
 def _build_customer_summary_sheet(ws, aggregated_customers: list[dict]) -> None:
-    total_additions = sum(c["total_additions"] for c in aggregated_customers)
-    total_payments = sum(c["total_payments"] for c in aggregated_customers)
-    total_outstanding = sum(c["outstanding_balance"] for c in aggregated_customers)
+    # Case A: Exclude customers with no business activity
+    active_customers = [
+        c for c in aggregated_customers
+        if len(c.get("batteries") or []) > 0 or len(c.get("payments") or []) > 0 or len(c.get("transactions") or []) > 0
+    ]
     
+    total_additions = sum(c["total_additions"] for c in active_customers)
+    total_payments = sum(c["total_payments"] for c in active_customers)
+    total_outstanding = sum(c["outstanding_balance"] for c in active_customers)
+    
+    collections = {
+        "Cash": 0.0,
+        "UPI": 0.0,
+        "Net Banking": 0.0,
+        "Card": 0.0,
+        "Cheque": 0.0,
+        "Other": 0.0
+    }
+    
+    for c in active_customers:
+        for tx in c["transactions"]:
+            if tx.get("transaction_type") == "PAYMENT":
+                mode = tx.get("recovered_payment_mode") or _extract_payment_mode(tx)
+                if mode in collections:
+                    collections[mode] += float(tx.get("amount") or 0.0)
+                else:
+                    collections["Other"] += float(tx.get("amount") or 0.0)
+                    
     cards = [
-        {"label": "Total Ledger Additions", "value": total_additions, "is_currency": True},
-        {"label": "Total Payments Received", "value": total_payments, "is_currency": True},
-        {"label": "Net Outstanding Ledger Balance", "value": total_outstanding, "is_currency": True}
+        {"label": "Total Bill", "value": total_additions, "is_currency": True},
+        {"label": "Total Paid", "value": total_payments, "is_currency": True},
+        {"label": "Outstanding", "value": total_outstanding, "is_currency": True},
+        {"label": "Cash Collection", "value": collections["Cash"], "is_currency": True},
+        {"label": "UPI Collection", "value": collections["UPI"], "is_currency": True},
+        {"label": "Net Banking Collection", "value": collections["Net Banking"], "is_currency": True},
+        {"label": "Card Collection", "value": collections["Card"], "is_currency": True},
+        {"label": "Cheque Collection", "value": collections["Cheque"], "is_currency": True}
     ]
     _write_summary_cards(ws, "CUSTOMER SUMMARY", "Financial statement and payment summaries per customer ledger", cards)
     
     headers = [
-        "Customer Name", "Mobile", "Battery Model", "Total Additions",
-        "Total Payments", "Outstanding Balance", "Last Transaction Date", "Payment Modes Used"
+        "Customer Name", "Battery Models", "Total Bill Amount", "Total Paid Amount",
+        "Outstanding Balance", "Payment Modes Used", "Last Payment Mode", "Last Payment Date"
     ]
     for col_idx, h in enumerate(headers, 1):
         ws.cell(row=7, column=col_idx, value=h)
         
-    sorted_customers = sorted(aggregated_customers, key=lambda x: (x["name"] or "").strip().lower())
+    sorted_customers = sorted(active_customers, key=lambda x: (x["name"] or "").strip().lower())
     for r_idx, c in enumerate(sorted_customers, 8):
         ws.cell(row=r_idx, column=1, value=c["name"])
-        ws.cell(row=r_idx, column=2, value=c["mobile"])
-        ws.cell(row=r_idx, column=3, value=c["battery_models_str"])
-        ws.cell(row=r_idx, column=4, value=c["total_additions"])
-        ws.cell(row=r_idx, column=5, value=c["total_payments"])
-        ws.cell(row=r_idx, column=6, value=c["outstanding_balance"])
-        ws.cell(row=r_idx, column=7, value=c["last_activity_date"])
-        ws.cell(row=r_idx, column=8, value=c["payment_modes_str"])
+        ws.cell(row=r_idx, column=2, value=c["battery_models_str"])
+        ws.cell(row=r_idx, column=3, value=c["total_additions"])
+        ws.cell(row=r_idx, column=4, value=c["total_payments"])
+        ws.cell(row=r_idx, column=5, value=c["outstanding_balance"])
+        ws.cell(row=r_idx, column=6, value=c["payment_modes_str"])
+        ws.cell(row=r_idx, column=7, value=c.get("last_payment_mode") or "N/A")
+        ws.cell(row=r_idx, column=8, value=c.get("last_payment_date") or "N/A")
         
-    _apply_table_formatting(ws, start_row=7, headers=headers, currency_cols=[4, 5, 6], date_cols=[7])
+    _apply_table_formatting(ws, start_row=7, headers=headers, currency_cols=[3, 4, 5], date_cols=[8])
 
 
 def _build_customer_transactions_sheet(ws, tx_rows: list[dict]) -> None:
@@ -563,8 +850,8 @@ def _build_customer_transactions_sheet(ws, tx_rows: list[dict]) -> None:
     _write_summary_cards(ws, "TRANSACTION HISTORY", "Detailed history of wholesale and retail payment transactions", cards)
     
     headers = [
-        "Customer Name", "Mobile", "Transaction Type", "Amount",
-        "Battery Model", "Serial Number", "Notes", "Payment Mode", "Payment Date"
+        "Date", "Customer Name", "Battery Model", "Transaction Type",
+        "Amount", "Payment Mode", "Notes", "Running Balance"
     ]
     for col_idx, h in enumerate(headers, 1):
         ws.cell(row=7, column=col_idx, value=h)
@@ -573,20 +860,32 @@ def _build_customer_transactions_sheet(ws, tx_rows: list[dict]) -> None:
     for r_idx, tx in enumerate(sorted_tx, 8):
         customer = tx.get("customers") or tx.get("customer") or {}
         payment = tx.get("payments") or tx.get("payment") or {}
+        # Support if payment is list
+        if isinstance(payment, list) and payment:
+            payment = payment[0]
+        elif not isinstance(payment, dict):
+            payment = {}
+            
         battery = payment.get("batteries") or payment.get("battery") or {}
+        if isinstance(battery, list) and battery:
+            battery = battery[0]
+        elif not isinstance(battery, dict):
+            battery = {}
+            
         battery_model = f"{battery.get('battery_type', '')} {battery.get('model_number', '')}".strip() or "N/A"
-        
-        ws.cell(row=r_idx, column=1, value=customer.get("name", "N/A"))
-        ws.cell(row=r_idx, column=2, value=customer.get("mobile", "N/A"))
-        ws.cell(row=r_idx, column=3, value=tx.get("transaction_type", "N/A"))
-        ws.cell(row=r_idx, column=4, value=float(tx.get("amount") or 0.0))
-        ws.cell(row=r_idx, column=5, value=battery_model)
-        ws.cell(row=r_idx, column=6, value=battery.get("serial_number") or "N/A")
+        if not battery_model or battery_model == "N/A":
+            battery_model = battery.get("model_name") or "N/A"
+            
+        ws.cell(row=r_idx, column=1, value=str(tx.get("created_at", ""))[:10])
+        ws.cell(row=r_idx, column=2, value=customer.get("name", "N/A"))
+        ws.cell(row=r_idx, column=3, value=battery_model)
+        ws.cell(row=r_idx, column=4, value=tx.get("transaction_type", "N/A"))
+        ws.cell(row=r_idx, column=5, value=float(tx.get("amount") or 0.0))
+        ws.cell(row=r_idx, column=6, value=tx.get("recovered_payment_mode") or _extract_payment_mode(tx))
         ws.cell(row=r_idx, column=7, value=tx.get("notes") or "")
-        ws.cell(row=r_idx, column=8, value=_normalize_payment_mode(tx.get("payment_mode")))
-        ws.cell(row=r_idx, column=9, value=str(tx.get("created_at", ""))[:10])
+        ws.cell(row=r_idx, column=8, value=tx.get("running_balance") or 0.0)
         
-    _apply_table_formatting(ws, start_row=7, headers=headers, currency_cols=[4], date_cols=[9])
+    _apply_table_formatting(ws, start_row=7, headers=headers, currency_cols=[5, 8], date_cols=[1])
 
 
 def _build_payments_sheet(ws, aggregated_customers: list[dict]) -> None:
@@ -597,9 +896,19 @@ def _build_payments_sheet(ws, aggregated_customers: list[dict]) -> None:
     overdue_count = 0
     pending_count = 0
     
-    customers_with_payments = [c for c in aggregated_customers if len(c["payments"]) > 0]
+    # Filter to active debtors (outstanding_balance > 0.01)
+    active_debtors = [c for c in aggregated_customers if c["outstanding_balance"] > 0.01]
     
-    for c in customers_with_payments:
+    collections = {
+        "Cash": 0.0,
+        "UPI": 0.0,
+        "Net Banking": 0.0,
+        "Card": 0.0,
+        "Cheque": 0.0,
+        "Other": 0.0
+    }
+    
+    for c in active_debtors:
         outstanding = c["outstanding_balance"]
         total_outstanding += outstanding
         
@@ -611,13 +920,15 @@ def _build_payments_sheet(ws, aggregated_customers: list[dict]) -> None:
             except Exception:
                 pass
                 
-        payment_dates = [
-            tx.get("created_at")[:10]
-            for tx in c["transactions"]
-            if tx.get("transaction_type") == "PAYMENT" and tx.get("created_at")
-        ]
-        last_payment_date = max(payment_dates) if payment_dates else "N/A"
-        
+        # Calculate payment mode collections for active debtors
+        for tx in c["transactions"]:
+            if tx.get("transaction_type") == "PAYMENT":
+                mode = tx.get("recovered_payment_mode") or _extract_payment_mode(tx)
+                if mode in collections:
+                    collections[mode] += float(tx.get("amount") or 0.0)
+                else:
+                    collections["Other"] += float(tx.get("amount") or 0.0)
+                    
         due_date = c["due_date"]
         is_overdue = False
         if outstanding > 0:
@@ -626,9 +937,7 @@ def _build_payments_sheet(ws, aggregated_customers: list[dict]) -> None:
             elif due_date != "N/A" and due_date < today_str:
                 is_overdue = True
                 
-        if outstanding == 0:
-            status = "0 Balance"
-        elif is_overdue:
+        if is_overdue:
             status = "Overdue"
             overdue_count += 1
         else:
@@ -641,25 +950,31 @@ def _build_payments_sheet(ws, aggregated_customers: list[dict]) -> None:
             "total_bill": c["total_additions"],
             "total_paid": c["total_payments"],
             "outstanding": outstanding,
+            "modes": c["payment_modes_str"],
+            "last_payment_mode": c.get("last_payment_mode") or "N/A",
+            "last_payment_date": c.get("last_payment_date") or "N/A",
             "due_date": due_date,
             "days_pending": days_pending,
-            "last_payment_date": last_payment_date,
-            "modes": c["payment_modes_str"],
             "status": status
         })
         
     sorted_processed = sorted(processed, key=lambda x: x["outstanding"], reverse=True)
     
     cards = [
-        {"label": "Total Outstanding Amount", "value": total_outstanding, "is_currency": True},
+        {"label": "Total Outstanding", "value": total_outstanding, "is_currency": True},
         {"label": "Pending Accounts", "value": pending_count},
-        {"label": "Overdue Accounts", "value": overdue_count}
+        {"label": "Overdue Accounts", "value": overdue_count},
+        {"label": "Cash Collection", "value": collections["Cash"], "is_currency": True},
+        {"label": "UPI Collection", "value": collections["UPI"], "is_currency": True},
+        {"label": "Net Banking Collection", "value": collections["Net Banking"], "is_currency": True},
+        {"label": "Card Collection", "value": collections["Card"], "is_currency": True},
+        {"label": "Cheque Collection", "value": collections["Cheque"], "is_currency": True}
     ]
     _write_summary_cards(ws, "UDHARI LEDGER", "Debt recovery and outstanding collection tracking report", cards)
     
     headers = [
-        "Customer Name", "Mobile", "Total Bill Amount", "Total Paid",
-        "Outstanding Amount", "Due Date", "Days Pending", "Last Payment Date", "Payment Modes Used"
+        "Customer Name", "Mobile", "Total Bill", "Total Paid", "Outstanding",
+        "Payment Modes Used", "Last Payment Mode", "Last Payment Date", "Due Date", "Days Pending"
     ]
     for col_idx, h in enumerate(headers, 1):
         ws.cell(row=7, column=col_idx, value=h)
@@ -671,19 +986,18 @@ def _build_payments_sheet(ws, aggregated_customers: list[dict]) -> None:
         ws.cell(row=r_idx, column=4, value=p["total_paid"])
         
         out_cell = ws.cell(row=r_idx, column=5, value=p["outstanding"])
-        if p["status"] == "0 Balance":
-            out_cell.fill = GREEN_FILL
-        elif p["status"] == "Overdue":
+        if p["status"] == "Overdue":
             out_cell.fill = RED_FILL
-        elif p["status"] == "Pending":
+        else:
             out_cell.fill = YELLOW_FILL
             
-        ws.cell(row=r_idx, column=6, value=p["due_date"])
-        ws.cell(row=r_idx, column=7, value=p["days_pending"])
+        ws.cell(row=r_idx, column=6, value=p["modes"])
+        ws.cell(row=r_idx, column=7, value=p["last_payment_mode"])
         ws.cell(row=r_idx, column=8, value=p["last_payment_date"])
-        ws.cell(row=r_idx, column=9, value=p["modes"])
+        ws.cell(row=r_idx, column=9, value=p["due_date"])
+        ws.cell(row=r_idx, column=10, value=p["days_pending"])
         
-    _apply_table_formatting(ws, start_row=7, headers=headers, currency_cols=[3, 4, 5], date_cols=[6, 8], number_cols=[7])
+    _apply_table_formatting(ws, start_row=7, headers=headers, currency_cols=[3, 4, 5], date_cols=[8, 9], number_cols=[10])
 
 
 def _build_scrap_payments_sheet(ws, aggregated_customers: list[dict]) -> None:
@@ -1095,10 +1409,10 @@ def generate_excel(
         return db.table("batteries").select("*, customers(*), payments(*)").eq("is_archived", False).execute().data or []
         
     def get_payments():
-        return db.table("payments").select("*").eq("is_archived", False).execute().data or []
+        return db.table("payments").select("*, customers(*), batteries(*)").eq("is_archived", False).execute().data or []
         
     def get_transactions():
-        return db.table("payment_transactions").select("*, customers(*)").execute().data or []
+        return db.table("payment_transactions").select("*, customers(*), payments(*, batteries(*))").execute().data or []
         
     def get_reminders():
         return db.table("service_reminders").select("*").eq("is_archived", False).execute().data or []
@@ -1169,7 +1483,7 @@ def generate_excel(
             
         # Sheet 1: Dashboard Summary
         ws_dashboard = wb.create_sheet("SHOP BUSINESS SUMMARY")
-        _build_business_summary_sheet(ws_dashboard, customers, batteries, payments, scrap_customers, shops, stock)
+        _build_business_summary_sheet(ws_dashboard, customers, batteries, payments, scrap_customers, shops, stock, f_txs)
         
         # Sheet 2: Customers
         ws_cust = wb.create_sheet("Customers")
