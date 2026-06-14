@@ -999,8 +999,9 @@ def _build_shop_purchases_sheet(ws, rows: list[dict]) -> None:
     _write_summary_cards(ws, "SHOP PURCHASES", "Chronological records of batteries purchased from wholesale shops", cards)
     
     headers = [
-        "Shop Name", "Owner Name", "Mobile", "Battery Model", "Serial Number", "Invoice Number",
-        "Quantity", "Purchase Date", "Amount", "Udhari Amount", "Payment Mode", "Created At"
+        "Shop Name", "Owner Name", "Mobile", "Battery Model", "Quantity", "Serial Numbers",
+        "Invoice Number", "Stock Reduced", "Purchase Date", "Amount", "Udhari Amount",
+        "Payment Mode", "Created At"
     ]
     for col_idx, h in enumerate(headers, 1):
         ws.cell(row=7, column=col_idx, value=h)
@@ -1012,16 +1013,17 @@ def _build_shop_purchases_sheet(ws, rows: list[dict]) -> None:
         ws.cell(row=r_idx, column=2, value=shop.get("owner_name", ""))
         ws.cell(row=r_idx, column=3, value=shop.get("mobile", ""))
         ws.cell(row=r_idx, column=4, value=r.get("battery_model", ""))
-        ws.cell(row=r_idx, column=5, value=r.get("serial_number", ""))
-        ws.cell(row=r_idx, column=6, value=r.get("invoice_number", ""))
-        ws.cell(row=r_idx, column=7, value=int(r.get("quantity") or 1))
-        ws.cell(row=r_idx, column=8, value=str(r.get("purchase_date", ""))[:10])
-        ws.cell(row=r_idx, column=9, value=float(r.get("amount") or 0.0))
-        ws.cell(row=r_idx, column=10, value=float(r.get("udhari_amount") or 0.0))
-        ws.cell(row=r_idx, column=11, value=_normalize_payment_mode(r.get("payment_mode")))
-        ws.cell(row=r_idx, column=12, value=str(r.get("created_at", ""))[:10])
+        ws.cell(row=r_idx, column=5, value=int(r.get("quantity") or 1))
+        ws.cell(row=r_idx, column=6, value=r.get("serial_number", ""))
+        ws.cell(row=r_idx, column=7, value=r.get("invoice_number", ""))
+        ws.cell(row=r_idx, column=8, value="Yes")
+        ws.cell(row=r_idx, column=9, value=str(r.get("purchase_date", ""))[:10])
+        ws.cell(row=r_idx, column=10, value=float(r.get("amount") or 0.0))
+        ws.cell(row=r_idx, column=11, value=float(r.get("udhari_amount") or 0.0))
+        ws.cell(row=r_idx, column=12, value=_normalize_payment_mode(r.get("payment_mode")))
+        ws.cell(row=r_idx, column=13, value=str(r.get("created_at", ""))[:10])
         
-    _apply_table_formatting(ws, start_row=7, headers=headers, currency_cols=[9, 10], date_cols=[8, 12], number_cols=[7])
+    _apply_table_formatting(ws, start_row=7, headers=headers, currency_cols=[10, 11], date_cols=[9, 13], number_cols=[5])
 
 
 def _build_shop_payments_sheet(ws, rows: list[dict]) -> None:
@@ -1361,6 +1363,7 @@ def generate_shop_statement_excel(db: Client, shop_id: str) -> bytes:
     wb.remove(wb.active)  # remove default sheet
     
     from app.services.shop import get_shop_details
+    from app.database import safe_execute
     details = get_shop_details(db, shop_id)
     shop = details["shop"]
     purchases = details["purchases"]
@@ -1409,7 +1412,7 @@ def generate_shop_statement_excel(db: Client, shop_id: str) -> bytes:
     
     # 2. Purchases History
     ws_purchases = wb.create_sheet("Purchase History")
-    p_headers = ["Purchase Date", "Battery Model", "Serial Number", "Invoice Number", "Quantity", "Amount (₹)", "Udhari Amount (₹)", "Payment Mode"]
+    p_headers = ["Purchase Date", "Battery Model", "Quantity", "Serial Numbers", "Invoice Number", "Stock Reduced", "Amount (₹)", "Udhari Amount (₹)", "Payment Mode"]
     for col_idx, h in enumerate(p_headers, 1):
         ws_purchases.cell(row=1, column=col_idx, value=h)
         
@@ -1417,14 +1420,15 @@ def generate_shop_statement_excel(db: Client, shop_id: str) -> bytes:
         ws_purchases.append([
             str(p.purchase_date)[:10],
             p.battery_model,
+            p.quantity,
             p.serial_number,
             p.invoice_number,
-            p.quantity,
+            "Yes",
             float(p.amount),
             float(p.udhari_amount),
             _normalize_payment_mode(p.payment_mode)
         ])
-    _apply_table_formatting(ws_purchases, start_row=1, headers=p_headers, currency_cols=[6, 7], date_cols=[1], number_cols=[5])
+    _apply_table_formatting(ws_purchases, start_row=1, headers=p_headers, currency_cols=[7, 8], date_cols=[1], number_cols=[3])
     
     # 3. Udhari Ledger Transaction History
     ws_payments = wb.create_sheet("Udhari Transaction History")
@@ -1442,6 +1446,31 @@ def generate_shop_statement_excel(db: Client, shop_id: str) -> bytes:
             str(t.created_at)[:10],
         ])
     _apply_table_formatting(ws_payments, start_row=1, headers=t_headers, currency_cols=[3], date_cols=[1, 6])
+    
+    # 4. Stock Movement
+    ws_movement = wb.create_sheet("Stock Movement")
+    m_headers = ["Battery Model", "Opening Stock", "Quantity Sold (To Shop)", "Closing Stock"]
+    for col_idx, h in enumerate(m_headers, 1):
+        ws_movement.cell(row=1, column=col_idx, value=h)
+        
+    from collections import defaultdict
+    model_sold = defaultdict(int)
+    for p in purchases:
+        model_sold[p.battery_model.strip().upper()] += int(p.quantity or 1)
+        
+    stock_res = safe_execute(db.table("battery_stock").select("model_name, quantity").eq("is_archived", False))
+    stock_map = {s["model_name"].strip().upper(): s["quantity"] for s in (stock_res.data or [])}
+    
+    for model, qty_sold in sorted(model_sold.items()):
+        closing = stock_map.get(model, 0)
+        opening = closing + qty_sold
+        ws_movement.append([
+            model,
+            opening,
+            qty_sold,
+            closing
+        ])
+    _apply_table_formatting(ws_movement, start_row=1, headers=m_headers, number_cols=[2, 3, 4])
     
     buffer = BytesIO()
     wb.save(buffer)

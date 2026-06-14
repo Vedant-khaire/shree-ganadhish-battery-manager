@@ -55,7 +55,8 @@ class ShopResponse(BaseModel):
 
 class ShopPurchaseCreate(BaseModel):
     battery_model: str
-    serial_number: str
+    serial_number: Optional[str] = ""
+    serial_numbers: List[str] = []
     invoice_number: str = ""
     quantity: int = 1
     purchase_date: str
@@ -63,7 +64,7 @@ class ShopPurchaseCreate(BaseModel):
     udhari_amount: float = 0.0
     payment_mode: Optional[str] = "Cash"
 
-    @field_validator("battery_model", "serial_number")
+    @field_validator("battery_model")
     @classmethod
     def validate_non_empty(cls, v: str) -> str:
         if not v or not v.strip():
@@ -96,7 +97,7 @@ class ShopPurchaseResponse(BaseModel):
     id: str
     shop_id: str
     battery_model: str
-    serial_number: str
+    serial_number: Optional[str] = ""
     invoice_number: str
     quantity: int
     purchase_date: str
@@ -111,7 +112,7 @@ class ShopPurchaseResponse(BaseModel):
             id=str(row["id"]),
             shop_id=str(row["shop_id"]),
             battery_model=row["battery_model"],
-            serial_number=row["serial_number"],
+            serial_number=row.get("serial_number", ""),
             invoice_number=row["invoice_number"],
             quantity=int(row.get("quantity", 1)),
             purchase_date=str(row.get("purchase_date", "")),
@@ -120,6 +121,7 @@ class ShopPurchaseResponse(BaseModel):
             created_at=str(row.get("created_at", "")),
             payment_mode=row.get("payment_mode", "Cash"),
         )
+
 
 
 class ShopPaymentResponse(BaseModel):

@@ -5,7 +5,9 @@ import 'package:intl/intl.dart';
 import 'package:dio/dio.dart';
 
 import '../../providers/shop_provider.dart';
+import '../../providers/stock_provider.dart';
 import '../../models/shop.dart';
+import '../../models/stock.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/empty_state.dart';
@@ -153,7 +155,7 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
   void _showAddPurchaseDialog(BuildContext context) {
     final formKey = GlobalKey<FormState>();
     String? selectedBatteryModel;
-    final serialNumberController = TextEditingController();
+    final List<TextEditingController> serialControllers = [TextEditingController()];
     final invoiceNumberController = TextEditingController();
     final quantityController = TextEditingController(text: '1');
     final amountController = TextEditingController();
@@ -163,6 +165,24 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
     final paymentModes = ['Cash', 'UPI', 'Net banking', 'Udhari'];
     bool isSubmitting = false;
     String? localError;
+
+    void updateSerialFieldsCount(int count, StateSetter setDialogState) {
+      if (count <= 0) return;
+      if (serialControllers.length == count) return;
+      
+      setDialogState(() {
+        if (serialControllers.length < count) {
+          while (serialControllers.length < count) {
+            serialControllers.add(TextEditingController());
+          }
+        } else {
+          while (serialControllers.length > count) {
+            final controller = serialControllers.removeLast();
+            controller.dispose();
+          }
+        }
+      });
+    }
 
     showDialog(
       context: context,
@@ -174,6 +194,12 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
             content: Consumer(
               builder: (consumerContext, ref, child) {
                 final stockModelsAsync = ref.watch(activeStockModelsProvider);
+                final stockItems = stockModelsAsync.value ?? [];
+                final matchedList = selectedBatteryModel != null
+                    ? stockItems.where((item) => item.modelName.toUpperCase() == selectedBatteryModel!.trim().toUpperCase()).toList()
+                    : [];
+                final matchedStockItem = matchedList.isNotEmpty ? matchedList.first : null;
+
                 return Form(
                   key: formKey,
                   child: SingleChildScrollView(
@@ -270,11 +296,6 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                                   const SizedBox(height: 6),
                                   Builder(
                                     builder: (context) {
-                                      final matchedList = stockItems
-                                          .where((item) => item.modelName.toUpperCase() == selectedBatteryModel!.trim().toUpperCase())
-                                          .toList();
-                                      final matchedStockItem = matchedList.isNotEmpty ? matchedList.first : null;
-
                                       if (matchedStockItem != null) {
                                         return Text(
                                           'Available in stock: ${matchedStockItem.quantity} units',
@@ -304,15 +325,55 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                           ),
                         ),
                         const SizedBox(height: 12),
-                        TextFormField(
-                          controller: serialNumberController,
-                          decoration: const InputDecoration(
-                            labelText: 'Battery Serial Number *',
-                            prefixIcon: Icon(Icons.qr_code_rounded),
-                          ),
-                          textCapitalization: TextCapitalization.characters,
-                          validator: (v) => (v == null || v.trim().isEmpty) ? 'Serial number is required' : null,
+                        const Text(
+                          'Serial Numbers *',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                         ),
+                        const SizedBox(height: 6),
+                        ...List.generate(serialControllers.length, (index) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8.0),
+                            child: Autocomplete<String>(
+                              optionsBuilder: (TextEditingValue textEditingValue) {
+                                final cleanText = textEditingValue.text.trim().toLowerCase();
+                                List<String> serialOptions = [];
+                                if (matchedStockItem != null) {
+                                  final unitsAsync = ref.watch(stockUnitsProvider(matchedStockItem.id));
+                                  if (unitsAsync is AsyncData<List<BatteryUnit>>) {
+                                    serialOptions = unitsAsync.value.map((u) => u.serialNumber).toList();
+                                  }
+                                }
+                                return serialOptions.where((s) => s.toLowerCase().contains(cleanText));
+                              },
+                              onSelected: (String selection) {
+                                serialControllers[index].text = selection;
+                              },
+                              fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                                if (textEditingController.text != serialControllers[index].text) {
+                                  textEditingController.text = serialControllers[index].text;
+                                }
+                                textEditingController.addListener(() {
+                                  serialControllers[index].text = textEditingController.text;
+                                });
+                                return TextFormField(
+                                  controller: textEditingController,
+                                  focusNode: focusNode,
+                                  decoration: InputDecoration(
+                                    labelText: 'Serial Number ${index + 1} *',
+                                    prefixIcon: const Icon(Icons.qr_code_rounded),
+                                  ),
+                                  textCapitalization: TextCapitalization.characters,
+                                  validator: (v) {
+                                    if (v == null || v.trim().isEmpty) {
+                                      return 'Required';
+                                    }
+                                    return null;
+                                  },
+                                );
+                              },
+                            ),
+                          );
+                        }),
                         const SizedBox(height: 12),
                         TextFormField(
                           controller: invoiceNumberController,
@@ -323,7 +384,6 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                           textCapitalization: TextCapitalization.characters,
                         ),
                         const SizedBox(height: 12),
-
                         DropdownButtonFormField<String>(
                           value: selectedPaymentMode,
                           decoration: const InputDecoration(
@@ -358,6 +418,12 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                                   prefixIcon: Icon(Icons.production_quantity_limits_rounded),
                                 ),
                                 keyboardType: TextInputType.number,
+                                onChanged: (v) {
+                                  final qty = int.tryParse(v.trim()) ?? 1;
+                                  if (qty > 0) {
+                                    updateSerialFieldsCount(qty, setDialogState);
+                                  }
+                                },
                                 validator: (v) {
                                   if (v == null || v.trim().isEmpty) return 'Required';
                                   final qty = int.tryParse(v.trim());
@@ -444,7 +510,12 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
             ),
             actions: [
               TextButton(
-                onPressed: isSubmitting ? null : () => Navigator.pop(dialogContext),
+                onPressed: isSubmitting ? null : () {
+                  for (final c in serialControllers) {
+                    c.dispose();
+                  }
+                  Navigator.pop(dialogContext);
+                },
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
@@ -469,6 +540,21 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                           return;
                         }
 
+                        // Check duplicates in serialControllers
+                        final serials = serialControllers.map((c) => c.text.trim().toUpperCase()).toList();
+                        if (serials.any((s) => s.isEmpty)) {
+                          setDialogState(() {
+                            localError = 'Please enter all serial numbers';
+                          });
+                          return;
+                        }
+                        if (serials.toSet().length != serials.length) {
+                          setDialogState(() {
+                            localError = 'Duplicate serial numbers in list';
+                          });
+                          return;
+                        }
+
                         setDialogState(() {
                           isSubmitting = true;
                           localError = null;
@@ -476,7 +562,7 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
 
                         final payload = {
                           'battery_model': selectedBatteryModel,
-                          'serial_number': serialNumberController.text.trim(),
+                          'serial_numbers': serials,
                           'invoice_number': invoiceNumberController.text.trim(),
                           'quantity': int.parse(quantityController.text.trim()),
                           'purchase_date': DateFormat('yyyy-MM-dd').format(purchaseDate),
@@ -489,6 +575,9 @@ class _ShopDetailScreenState extends ConsumerState<ShopDetailScreen> with Single
                           await ref.read(shopOperationsProvider).logShopPurchase(widget.shopId, payload);
                           if (context.mounted) {
                             ToastHelper.show(context, 'Purchase logged successfully');
+                            for (final c in serialControllers) {
+                              c.dispose();
+                            }
                             Navigator.pop(dialogContext);
                           }
                         } on DioException catch (e) {

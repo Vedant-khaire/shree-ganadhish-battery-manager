@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from supabase import Client
 
 from app.models.battery import BatteryCreate, BatteryUpdate, BatteryResponse
+from app.database import safe_execute
 
 
 # ---------------------------------------------------------------------------
@@ -111,6 +112,19 @@ def create_battery(
     Insert battery. Auto-computes warranty_expiry and warranty_reminder_date.
     Serial number is already normalized by Pydantic validator.
     """
+    # Validate multiple serial numbers tracking / case-insensitive duplication
+    sn = data.serial_number
+    if sn:
+        sn_upper = sn.strip().upper()
+        existing = safe_execute(db.table("battery_units").select("*").ilike("serial_number", sn_upper))
+        if existing.data:
+            unit = existing.data[0]
+            if unit["status"] != "AVAILABLE":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Battery serial number '{sn_upper}' has already been sold or registered (current status: {unit['status']})."
+                )
+
     expiry, reminder = _compute_dates(data.sale_date, data.warranty_months)
 
     # Exclude auto_reduce_stock from database insertion payload
@@ -130,6 +144,31 @@ def create_battery(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create battery record",
         )
+
+    battery_id = result.data[0]["id"]
+
+    # Link/create battery units
+    if sn:
+        sn_upper = sn.strip().upper()
+        existing = safe_execute(db.table("battery_units").select("*").ilike("serial_number", sn_upper))
+        if existing.data:
+            unit = existing.data[0]
+            safe_execute(db.table("battery_units").update({
+                "status": "SOLD",
+                "customer_battery_id": battery_id,
+                "updated_at": "now()"
+            }).eq("id", unit["id"]))
+        else:
+            model_upper = data.model_number.strip().upper() if data.model_number else "UNKNOWN"
+            b_type = data.battery_type.strip().upper()
+            safe_execute(db.table("battery_units").insert({
+                "model_name": model_upper,
+                "battery_type": b_type,
+                "serial_number": sn_upper,
+                "status": "SOLD",
+                "purchase_date": data.sale_date.isoformat(),
+                "customer_battery_id": battery_id
+            }))
 
     # Auto-reduce stock if requested and a matching model exists
     if auto_reduce and data.model_number:
@@ -245,6 +284,14 @@ def archive_battery(db: Client, battery_id: str, device: str = "desktop") -> dic
 
 def delete_battery_permanently(db: Client, battery_id: str, device: str = "desktop") -> dict:
     """Hard-delete battery and all associated payments."""
+    try:
+        db.table("battery_units").update({
+            "status": "AVAILABLE",
+            "customer_battery_id": None,
+            "updated_at": "now()"
+        }).eq("customer_battery_id", battery_id).execute()
+    except Exception:
+        pass
     db.table("payments").delete().eq("battery_id", battery_id).execute()
     db.table("batteries").delete().eq("id", battery_id).execute()
     _log(db, f"BATTERY_PERMANENTLY_DELETED: {battery_id}", device)

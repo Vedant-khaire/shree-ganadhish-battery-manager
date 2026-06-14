@@ -10,6 +10,7 @@ from app.models.stock import (
     StockResponse,
     StockListResponse,
     StockMessageResponse,
+    BatteryUnitCreate,
 )
 from app.services.stock import (
     get_all_stock,
@@ -22,6 +23,8 @@ from app.services.stock import (
     restore_stock_item,
     reconcile_stock_from_sales,
     delete_stock_permanently,
+    add_stock_units,
+    get_available_units,
 )
 
 router = APIRouter(prefix="/stock", tags=["stock"])
@@ -136,3 +139,25 @@ def delete_stock(
 ):
     """Permanently delete a stock item."""
     return delete_stock_permanently(db, stock_id, device=x_device_type)
+
+
+@router.get("/{stock_id}/units")
+def list_stock_units(
+    stock_id: str,
+    db: Client = Depends(get_db),
+    _: str = Depends(get_current_admin),
+):
+    """List available serial numbers (units) for this stock item."""
+    return get_available_units(db, stock_id)
+
+
+@router.post("/{stock_id}/units")
+def replenish_stock_units(
+    stock_id: str,
+    data: BatteryUnitCreate,
+    x_device_type: str = Header("desktop"),
+    db: Client = Depends(get_db),
+    _: str = Depends(get_current_admin),
+):
+    """Replenish stock by adding new available serial numbers."""
+    return add_stock_units(db, stock_id, data, device=x_device_type)

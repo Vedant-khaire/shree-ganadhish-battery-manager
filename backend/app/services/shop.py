@@ -307,14 +307,38 @@ def archive_shop(db: Client, shop_id: str, archive: bool = True, device: str = "
 
 
 def create_shop_purchase(db: Client, shop_id: str, data: ShopPurchaseCreate, device: str = "desktop") -> dict:
-    # 0. Prevent duplicate serial numbers (case-insensitive)
-    serial_clean = data.serial_number.strip().upper()
-    existing_serial = safe_execute(db.table("shop_purchases").select("id").ilike("serial_number", serial_clean))
-    if existing_serial.data:
+    # 0. Validate multiple serial numbers
+    quantity = data.quantity
+    serial_numbers = [sn.strip().upper() for sn in data.serial_numbers]
+
+    if len(serial_numbers) != quantity:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Battery serial number already exists in the system."
+            detail=f"Quantity ({quantity}) must exactly match the number of serial numbers provided ({len(serial_numbers)})."
         )
+
+    if any(not sn for sn in serial_numbers):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty serial numbers are not allowed."
+        )
+
+    if len(set(serial_numbers)) != len(serial_numbers):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Duplicate serial numbers in the same purchase are not allowed."
+        )
+
+    # Validate database uniqueness case-insensitively
+    for sn in serial_numbers:
+        existing = safe_execute(db.table("battery_units").select("*").ilike("serial_number", sn))
+        if existing.data:
+            unit = existing.data[0]
+            if unit["status"] != "AVAILABLE":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Battery serial number '{sn}' has already been sold or registered (current status: {unit['status']})."
+                )
 
     # 1. Verify and deduct stock from battery_stock if it exists in inventory
     model_upper = data.battery_model.strip().upper()
@@ -323,19 +347,20 @@ def create_shop_purchase(db: Client, shop_id: str, data: ShopPurchaseCreate, dev
     stock_item = None
     if stock_res.data:
         stock_item = stock_res.data[0]
-        if stock_item["quantity"] < data.quantity:
+        if stock_item["quantity"] < quantity:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Insufficient stock for model '{model_upper}'. Current stock is {stock_item['quantity']}, but {data.quantity} units requested."
+                detail=f"Insufficient stock for model '{model_upper}'. Current stock is {stock_item['quantity']}, but {quantity} units requested."
             )
 
     # 2. Record purchase
+    serial_str = ", ".join(serial_numbers)
     purchase_payload = {
         "shop_id": shop_id,
         "battery_model": model_upper,
-        "serial_number": data.serial_number.strip(), # Mandatory
+        "serial_number": serial_str,
         "invoice_number": data.invoice_number.strip(),
-        "quantity": data.quantity,
+        "quantity": quantity,
         "purchase_date": data.purchase_date,
         "amount": data.amount,
         "udhari_amount": data.udhari_amount,
@@ -346,12 +371,35 @@ def create_shop_purchase(db: Client, shop_id: str, data: ShopPurchaseCreate, dev
         raise HTTPException(status_code=500, detail="Failed to record shop purchase")
     
     created_purchase = ShopPurchaseResponse.from_row(pur_res.data[0])
+    purchase_id = created_purchase.id
+
+    # 2.5 Update/Create battery_units and link them
+    for sn in serial_numbers:
+        existing = safe_execute(db.table("battery_units").select("*").ilike("serial_number", sn))
+        if existing.data:
+            unit = existing.data[0]
+            safe_execute(db.table("battery_units").update({
+                "status": "SOLD",
+                "shop_purchase_id": purchase_id,
+                "updated_at": "now()"
+            }).eq("id", unit["id"]))
+        else:
+            b_type = stock_item["battery_type"] if stock_item else "4W"
+            safe_execute(db.table("battery_units").insert({
+                "model_name": model_upper,
+                "battery_type": b_type,
+                "serial_number": sn,
+                "status": "SOLD",
+                "purchase_date": data.purchase_date,
+                "shop_purchase_id": purchase_id,
+                "shop_source": None
+            }))
 
     # 3. Decrement Stock (only if it exists in inventory)
     if stock_item is not None:
-        new_qty = stock_item["quantity"] - data.quantity
+        new_qty = stock_item["quantity"] - quantity
         safe_execute(db.table("battery_stock").update({"quantity": new_qty, "updated_at": "now()"}).eq("id", stock_item["id"]))
-        _log(db, f"STOCK_AUTO_DECREASED: {model_upper} (-{data.quantity}) due to shop purchase", device)
+        _log(db, f"STOCK_AUTO_DECREASED: {model_upper} (-{quantity}) due to shop purchase", device)
 
     # 4. Consolidated Udhari Balance Ledger (Refinement 5)
     if data.udhari_amount > 0:
@@ -388,8 +436,9 @@ def create_shop_purchase(db: Client, shop_id: str, data: ShopPurchaseCreate, dev
             "notes": f"Purchase addition: Model: {model_upper}, Invoice: {data.invoice_number}"
         }))
 
-    _log(db, f"SHOP_PURCHASE_ADDED: Shop {shop_id} bought {data.quantity}x {model_upper}", device)
+    _log(db, f"SHOP_PURCHASE_ADDED: Shop {shop_id} bought {quantity}x {model_upper}", device)
     return {"message": "Shop purchase recorded successfully", "data": created_purchase}
+
 
 
 def settle_shop_payment(
@@ -518,8 +567,16 @@ def delete_shop_purchase(db: Client, shop_id: str, purchase_id: str, device: str
                 .eq("amount", udhari_amount)\
                 .like("notes", f"{notes_prefix}%"))
 
+    # 3.5 Revert/unlink related battery units linked to this purchase
+    safe_execute(db.table("battery_units").update({
+        "status": "AVAILABLE",
+        "shop_purchase_id": None,
+        "updated_at": "now()"
+    }).eq("shop_purchase_id", purchase_id))
+
     # 4. Delete the purchase record
     safe_execute(db.table("shop_purchases").delete().eq("id", purchase_id))
+
     
     # 5. Log detailed return audit trail
     log_text = (

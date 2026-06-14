@@ -251,4 +251,28 @@ class StockOperations {
       rethrow;
     }
   }
+
+  Future<void> replenishStockUnits(String stockId, List<String> serialNumbers, String purchaseDate, String? shopSource) async {
+    final apiClient = _ref.read(apiClientProvider);
+    await apiClient.dio.post(
+      '/stock/$stockId/units',
+      data: {
+        'serial_numbers': serialNumbers,
+        'purchase_date': purchaseDate,
+        if (shopSource != null) 'shop_source': shopSource,
+      },
+    );
+    
+    _ref.invalidate(stockListProvider);
+    _ref.invalidate(stockDetailsProvider(stockId));
+    _ref.invalidate(stockUnitsProvider(stockId));
+    _ref.invalidate(dashboardProvider);
+  }
 }
+
+final stockUnitsProvider = FutureProvider.autoDispose.family<List<BatteryUnit>, String>((ref, stockId) async {
+  final apiClient = ref.read(apiClientProvider);
+  final response = await apiClient.dio.get('/stock/$stockId/units');
+  final list = response.data['data'] as List<dynamic>? ?? [];
+  return list.map((u) => BatteryUnit.fromJson(u as Map<String, dynamic>)).toList();
+});

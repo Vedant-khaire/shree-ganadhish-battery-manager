@@ -6,6 +6,7 @@ import '../../providers/battery_provider.dart';
 import '../../providers/customer_provider.dart';
 import '../../models/stock.dart';
 import '../../models/battery.dart';
+import '../../providers/stock_provider.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_input.dart';
@@ -540,40 +541,123 @@ class _BatteryFormScreenState extends ConsumerState<BatteryFormScreen> {
                             ),
                             const SizedBox(height: 20),
 
-                            // Model Number
-                            AppInput(
-                              controller: _modelController,
-                              labelText: 'Battery Model *',
-                              prefixIcon: Icons.settings_outlined,
-                              textCapitalization: TextCapitalization.characters,
-                              enabled: !_isSubmitting,
-                              validator: (value) {
-                                if (value == null || value.trim().isEmpty) {
-                                  return 'Battery model is required';
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 20),
+                             // Model Number
+                             Consumer(
+                               builder: (context, ref, child) {
+                                 final stockModelsAsync = ref.watch(activeStockDropdownProvider);
+                                 return stockModelsAsync.when(
+                                   data: (stockItems) {
+                                     return Autocomplete<String>(
+                                       optionsBuilder: (TextEditingValue textEditingValue) {
+                                         final cleanText = textEditingValue.text.trim().toLowerCase();
+                                         return stockItems
+                                             .map((e) => e.modelName)
+                                             .where((model) => model.toLowerCase().contains(cleanText));
+                                       },
+                                       onSelected: (String selection) {
+                                         _modelController.text = selection;
+                                         final matches = stockItems.where((item) => item.modelName.toUpperCase() == selection.toUpperCase()).toList();
+                                         if (matches.isNotEmpty) {
+                                           setState(() {
+                                             _batteryType = matches.first.batteryType;
+                                           });
+                                         }
+                                       },
+                                       fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                                         if (textEditingController.text != _modelController.text) {
+                                           textEditingController.text = _modelController.text;
+                                         }
+                                         textEditingController.addListener(() {
+                                           _modelController.text = textEditingController.text;
+                                         });
+                                         return TextFormField(
+                                           controller: textEditingController,
+                                           focusNode: focusNode,
+                                           decoration: const InputDecoration(
+                                             labelText: 'Battery Model *',
+                                             prefixIcon: Icon(Icons.settings_outlined),
+                                           ),
+                                           textCapitalization: TextCapitalization.characters,
+                                           enabled: !_isSubmitting,
+                                           validator: (value) {
+                                             if (value == null || value.trim().isEmpty) {
+                                               return 'Battery model is required';
+                                             }
+                                             return null;
+                                           },
+                                         );
+                                       },
+                                     );
+                                   },
+                                   loading: () => const Center(
+                                     child: Padding(
+                                       padding: EdgeInsets.all(8.0),
+                                       child: CircularProgressIndicator(strokeWidth: 2),
+                                     ),
+                                   ),
+                                   error: (err, st) => Text(
+                                     'Failed to load battery stock: $err',
+                                     style: const TextStyle(color: Colors.red),
+                                   ),
+                                 );
+                               },
+                             ),
+                             const SizedBox(height: 20),
 
-                            // Serial Number
-                            AppInput(
-                              controller: _serialController,
-                              labelText: 'Serial Number',
-                              prefixIcon: Icons.qr_code_outlined,
-                              textCapitalization: TextCapitalization.characters,
-                              enabled: !_isSubmitting,
-                              hintText: 'Enter unique battery serial code',
-                              validator: (value) {
-                                if (value != null && value.trim().isNotEmpty) {
-                                  if (value.trim().length < 4) {
-                                    return 'Serial number should be at least 4 characters';
-                                  }
-                                }
-                                return null;
-                              },
-                            ),
-                            const SizedBox(height: 20),
+                             // Serial Number
+                             Consumer(
+                               builder: (context, ref, child) {
+                                 return Autocomplete<String>(
+                                   optionsBuilder: (TextEditingValue textEditingValue) {
+                                     final cleanText = textEditingValue.text.trim().toLowerCase();
+                                     List<String> serialOptions = [];
+                                     if (_modelController.text.isNotEmpty) {
+                                       final stockItems = ref.read(activeStockDropdownProvider).value ?? [];
+                                       final matchedList = stockItems.where((item) => item.modelName.toUpperCase() == _modelController.text.trim().toUpperCase()).toList();
+                                       if (matchedList.isNotEmpty) {
+                                         final matchedStockItem = matchedList.first;
+                                         final unitsAsync = ref.watch(stockUnitsProvider(matchedStockItem.id));
+                                         if (unitsAsync is AsyncData<List<BatteryUnit>>) {
+                                           serialOptions = unitsAsync.value.map((u) => u.serialNumber).toList();
+                                         }
+                                       }
+                                     }
+                                     return serialOptions.where((s) => s.toLowerCase().contains(cleanText));
+                                   },
+                                   onSelected: (String selection) {
+                                     _serialController.text = selection;
+                                   },
+                                   fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                                     if (textEditingController.text != _serialController.text) {
+                                       textEditingController.text = _serialController.text;
+                                     }
+                                     textEditingController.addListener(() {
+                                       _serialController.text = textEditingController.text;
+                                     });
+                                     return TextFormField(
+                                       controller: textEditingController,
+                                       focusNode: focusNode,
+                                       decoration: const InputDecoration(
+                                         labelText: 'Serial Number',
+                                         prefixIcon: Icon(Icons.qr_code_outlined),
+                                         hintText: 'Enter unique battery serial code',
+                                       ),
+                                       textCapitalization: TextCapitalization.characters,
+                                       enabled: !_isSubmitting,
+                                       validator: (value) {
+                                         if (value != null && value.trim().isNotEmpty) {
+                                           if (value.trim().length < 4) {
+                                             return 'Serial number should be at least 4 characters';
+                                           }
+                                         }
+                                         return null;
+                                       },
+                                     );
+                                   },
+                                 );
+                               },
+                             ),
+                             const SizedBox(height: 20),
 
                             // Sale Date
                             TextFormField(

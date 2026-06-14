@@ -67,3 +67,47 @@ class Stock {
     };
   }
 }
+
+class BatteryUnit {
+  final String id;
+  final String modelName;
+  final String batteryType;
+  final String serialNumber;
+  final String status;
+  final String? purchaseDate;
+  final String? shopSource;
+  final String? shopPurchaseId;
+  final String? customerBatteryId;
+  final String createdAt;
+  final String updatedAt;
+
+  BatteryUnit({
+    required this.id,
+    required this.modelName,
+    required this.batteryType,
+    required this.serialNumber,
+    required this.status,
+    this.purchaseDate,
+    this.shopSource,
+    this.shopPurchaseId,
+    this.customerBatteryId,
+    required this.createdAt,
+    required this.updatedAt,
+  });
+
+  factory BatteryUnit.fromJson(Map<String, dynamic> json) {
+    return BatteryUnit(
+      id: json['id'] as String,
+      modelName: json['model_name'] as String,
+      batteryType: json['battery_type'] as String,
+      serialNumber: json['serial_number'] as String,
+      status: json['status'] as String,
+      purchaseDate: json['purchase_date'] as String?,
+      shopSource: json['shop_source'] as String?,
+      shopPurchaseId: json['shop_purchase_id'] as String?,
+      customerBatteryId: json['customer_battery_id'] as String?,
+      createdAt: json['created_at'] as String? ?? '',
+      updatedAt: json['updated_at'] as String? ?? '',
+    );
+  }
+}

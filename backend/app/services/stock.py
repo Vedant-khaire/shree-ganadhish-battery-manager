@@ -2,7 +2,7 @@ from fastapi import HTTPException, status
 from supabase import Client
 
 from app.database import safe_execute
-from app.models.stock import StockCreate, StockUpdate, StockResponse
+from app.models.stock import StockCreate, StockUpdate, StockResponse, BatteryUnitCreate, BatteryUnitResponse
 
 
 # ---------------------------------------------------------------------------
@@ -48,6 +48,8 @@ def get_all_stock(
         db.table("battery_stock")
         .select("*", count="exact")
         .eq("is_archived", archived)
+        .order("model_name", desc=False)
+        .order("battery_type", desc=False)
         .order("created_at", desc=True)
     )
 
@@ -281,4 +283,77 @@ def reconcile_stock_from_sales(db: Client) -> dict:
     return {
         "status": "success",
         "reconciliation": reconciliation_list
+    }
+
+
+def add_stock_units(db: Client, stock_id: str, data: BatteryUnitCreate, device: str = "desktop") -> dict:
+    stock_row = _require_stock(db, stock_id)
+    serial_numbers = [sn.strip().upper() for sn in data.serial_numbers]
+    
+    if not serial_numbers:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="At least one serial number must be provided."
+        )
+
+    if any(not sn for sn in serial_numbers):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty serial numbers are not allowed."
+        )
+
+    if len(set(serial_numbers)) != len(serial_numbers):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Duplicate serial numbers in the input list are not allowed."
+        )
+
+    # Check database uniqueness
+    for sn in serial_numbers:
+        existing = safe_execute(db.table("battery_units").select("*").ilike("serial_number", sn))
+        if existing.data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Battery serial number '{sn}' already exists in the system (current status: {existing.data[0]['status']})."
+            )
+
+    # Insert units
+    inserted_units = []
+    for sn in serial_numbers:
+        payload = {
+            "model_name": stock_row["model_name"],
+            "battery_type": stock_row["battery_type"],
+            "serial_number": sn,
+            "status": "AVAILABLE",
+            "purchase_date": data.purchase_date,
+            "shop_source": data.shop_source
+        }
+        res = safe_execute(db.table("battery_units").insert(payload))
+        if res.data:
+            inserted_units.append(res.data[0])
+
+    # Increment stock quantity
+    new_qty = stock_row["quantity"] + len(serial_numbers)
+    safe_execute(db.table("battery_stock").update({"quantity": new_qty, "updated_at": "now()"}).eq("id", stock_id))
+
+    _log(db, f"STOCK_UNITS_ADDED: {stock_row['model_name']} (+{len(serial_numbers)} units)", device)
+    
+    return {
+        "message": f"Successfully added {len(serial_numbers)} units to stock",
+        "units": [BatteryUnitResponse.from_row(u) for u in inserted_units]
+    }
+
+
+def get_available_units(db: Client, stock_id: str) -> dict:
+    stock_row = _require_stock(db, stock_id)
+    res = safe_execute(
+        db.table("battery_units")
+        .select("*")
+        .eq("model_name", stock_row["model_name"])
+        .eq("battery_type", stock_row["battery_type"])
+        .eq("status", "AVAILABLE")
+        .order("serial_number", desc=False)
+    )
+    return {
+        "data": [BatteryUnitResponse.from_row(r) for r in (res.data or [])]
     }

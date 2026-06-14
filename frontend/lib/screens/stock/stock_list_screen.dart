@@ -531,99 +531,103 @@ class _StockListScreenState extends ConsumerState<StockListScreen> {
         final s = stockList[index];
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        s.modelName,
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          child: InkWell(
+            onTap: () => _showStockDetailsPanel(context, s),
+            borderRadius: BorderRadius.circular(8),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          s.modelName,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
                       ),
-                    ),
-                    _buildStockChip(s),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'Type: ${s.batteryType}',
-                      style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
-                    ),
-                    Text(
-                      'Threshold: ${s.lowStockThreshold}',
-                      style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
-                    ),
-                  ],
-                ),
-                const Divider(height: 24),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        const Text(
-                          'Stock: ',
-                          style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
-                        ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          icon: const Icon(Icons.remove_circle_outline, color: Color(0xFF64748B), size: 20),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: s.quantity > 0
-                              ? () => _adjustQty(context, ref, s, 1, false)
-                              : null,
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                          child: Text(
-                            '${s.quantity}',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      _buildStockChip(s),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'Type: ${s.batteryType}',
+                        style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                      ),
+                      Text(
+                        'Threshold: ${s.lowStockThreshold}',
+                        style: const TextStyle(color: Color(0xFF64748B), fontSize: 13),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          const Text(
+                            'Stock: ',
+                            style: TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.add_circle_outline, color: Color(0xFF64748B), size: 20),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                          onPressed: () => _adjustQty(context, ref, s, 1, true),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.edit_outlined, color: Colors.blue),
-                          onPressed: () {
-                            context.go('/stock/${s.id}/edit');
-                          },
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            archived ? Icons.restore : Icons.archive_outlined,
-                            color: archived ? Colors.green : Colors.orange,
+                          const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Icon(Icons.remove_circle_outline, color: Color(0xFF64748B), size: 20),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: s.quantity > 0
+                                ? () => _adjustQty(context, ref, s, 1, false)
+                                : null,
                           ),
-                          onPressed: () {
-                            _showArchiveConfirmDialog(context, ref, s.id, s.modelName, s.batteryType, !archived);
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_forever_outlined, color: Colors.red),
-                          onPressed: () {
-                            _showDeleteConfirmDialog(context, ref, s.id, s.modelName, s.batteryType);
-                          },
-                        ),
-                      ],
-                    )
-                  ],
-                ),
-              ],
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 12.0),
+                            child: Text(
+                              '${s.quantity}',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.add_circle_outline, color: Color(0xFF64748B), size: 20),
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                            onPressed: () => _adjustQty(context, ref, s, 1, true),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(Icons.edit_outlined, color: Colors.blue),
+                            onPressed: () {
+                              context.go('/stock/${s.id}/edit');
+                            },
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              archived ? Icons.restore : Icons.archive_outlined,
+                              color: archived ? Colors.green : Colors.orange,
+                            ),
+                            onPressed: () {
+                              _showArchiveConfirmDialog(context, ref, s.id, s.modelName, s.batteryType, !archived);
+                            },
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_forever_outlined, color: Colors.red),
+                            onPressed: () {
+                              _showDeleteConfirmDialog(context, ref, s.id, s.modelName, s.batteryType);
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         );
@@ -700,6 +704,350 @@ class _StockListScreenState extends ConsumerState<StockListScreen> {
         showingText,
         controls,
       ],
+    );
+  }
+
+  void _showStockDetailsPanel(BuildContext context, Stock stock) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _StockDetailsSheet(stock: stock),
+    );
+  }
+}
+
+class _StockDetailsSheet extends ConsumerStatefulWidget {
+  final Stock stock;
+
+  const _StockDetailsSheet({super.key, required this.stock});
+
+  @override
+  ConsumerState<_StockDetailsSheet> createState() => _StockDetailsSheetState();
+}
+
+class _StockDetailsSheetState extends ConsumerState<_StockDetailsSheet> {
+  final _formKey = GlobalKey<FormState>();
+  final _serialsController = TextEditingController();
+  final _shopSourceController = TextEditingController();
+  DateTime _purchaseDate = DateTime.now();
+  bool _isSubmitting = false;
+
+  @override
+  void dispose() {
+    _serialsController.dispose();
+    _shopSourceController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _selectPurchaseDate(BuildContext context) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _purchaseDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now(),
+    );
+    if (picked != null && picked != _purchaseDate) {
+      setState(() {
+        _purchaseDate = picked;
+      });
+    }
+  }
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final serialsText = _serialsController.text.trim();
+    if (serialsText.isEmpty) {
+      ToastHelper.show(context, 'Please enter at least one serial number', isError: true);
+      return;
+    }
+
+    // Split by comma or newline
+    final serials = serialsText
+        .split(RegExp(r'[,\n]'))
+        .map((s) => s.trim().toUpperCase())
+        .where((s) => s.isNotEmpty)
+        .toList();
+
+    if (serials.isEmpty) {
+      ToastHelper.show(context, 'Please enter at least one valid serial number', isError: true);
+      return;
+    }
+
+    setState(() {
+      _isSubmitting = true;
+    });
+
+    try {
+      final formattedDate = DateFormat('yyyy-MM-dd').format(_purchaseDate);
+      final shopSource = _shopSourceController.text.trim().isEmpty 
+          ? null 
+          : _shopSourceController.text.trim();
+
+      await ref.read(stockOperationsProvider).replenishStockUnits(
+        widget.stock.id,
+        serials,
+        formattedDate,
+        shopSource,
+      );
+
+      if (mounted) {
+        ToastHelper.show(context, 'Stock replenished successfully');
+        _serialsController.clear();
+        _shopSourceController.clear();
+        setState(() {
+          _purchaseDate = DateTime.now();
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ToastHelper.show(
+          context,
+          'Error: ${ErrorParser.parse(e)}',
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final unitsAsync = ref.watch(stockUnitsProvider(widget.stock.id));
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(
+        top: 8,
+        left: 20,
+        right: 20,
+        bottom: 20 + bottomInset,
+      ),
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Drag Handle
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey[700] : Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Title
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.stock.modelName,
+                      style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Type: ${widget.stock.batteryType}',
+                      style: TextStyle(
+                        color: isDark ? Colors.grey[400] : Colors.grey[600],
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: widget.stock.quantity <= widget.stock.lowStockThreshold
+                      ? Colors.red.withOpacity(0.1)
+                      : Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  widget.stock.quantity <= widget.stock.lowStockThreshold
+                      ? 'LOW STOCK (${widget.stock.quantity})'
+                      : 'IN STOCK (${widget.stock.quantity})',
+                  style: TextStyle(
+                    color: widget.stock.quantity <= widget.stock.lowStockThreshold
+                        ? Colors.red
+                        : Colors.green,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 24),
+          // Content Scroll View
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Available Serials Title
+                  const Text(
+                    'Available Serial Numbers',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  unitsAsync.when(
+                    data: (units) {
+                      if (units.isEmpty) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12.0),
+                          child: Text(
+                            'No available serial numbers found. This item is currently managed as bulk stock.',
+                            style: TextStyle(
+                              color: isDark ? Colors.grey[400] : Colors.grey[600],
+                              fontStyle: FontStyle.italic,
+                              fontSize: 14,
+                            ),
+                          ),
+                        );
+                      }
+                      return Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: units.map((u) {
+                          return Tooltip(
+                            message: 'Purchased: ${u.purchaseDate ?? "N/A"}\nSource: ${u.shopSource ?? "N/A"}',
+                            child: Chip(
+                              label: Text(u.serialNumber),
+                              avatar: const Icon(Icons.qr_code, size: 16),
+                              backgroundColor: isDark ? const Color(0xFF1E293B) : const Color(0xFFF1F5F9),
+                              labelStyle: const TextStyle(fontSize: 13),
+                              side: BorderSide(
+                                color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      );
+                    },
+                    loading: () => const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 20.0),
+                        child: CircularProgressIndicator(),
+                      ),
+                    ),
+                    error: (err, stack) => Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 20.0),
+                        child: Text(
+                          'Error loading serial numbers: ${err.toString()}',
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const Divider(height: 32),
+                  // Add Serials Form
+                  const Text(
+                    'Replenish Stock (Add Serials)',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextFormField(
+                          controller: _serialsController,
+                          maxLines: 3,
+                          decoration: InputDecoration(
+                            labelText: 'Serial Numbers',
+                            alignLabelWithHint: true,
+                            hintText: 'Enter serial numbers separated by commas or newlines\ne.g. EXIDE123, EXIDE456',
+                            hintStyle: TextStyle(
+                              fontSize: 13,
+                              color: isDark ? Colors.grey[500] : Colors.grey[400],
+                            ),
+                          ),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Serial numbers are required';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        TextFormField(
+                          controller: _shopSourceController,
+                          decoration: const InputDecoration(
+                            labelText: 'Supplier Shop / Source (Optional)',
+                            hintText: 'e.g. Ramesh Battery House',
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        InkWell(
+                          onTap: () => _selectPurchaseDate(context),
+                          child: InputDecorator(
+                            decoration: const InputDecoration(
+                              labelText: 'Purchase Date',
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  DateFormat('yyyy-MM-dd').format(_purchaseDate),
+                                  style: const TextStyle(fontSize: 16),
+                                ),
+                                const Icon(Icons.calendar_today, size: 20),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          child: AppButton(
+                            label: 'Add Serials & Replenish Stock',
+                            isLoading: _isSubmitting,
+                            onPressed: _submit,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

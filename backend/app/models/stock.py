@@ -126,3 +126,46 @@ class StockListResponse(BaseModel):
     total: int
     page: int
     limit: int
+
+
+class BatteryUnitCreate(BaseModel):
+    model_config = {
+        "protected_namespaces": ()
+    }
+    serial_numbers: list[str]
+    purchase_date: str
+    shop_source: Optional[str] = None
+
+
+class BatteryUnitResponse(BaseModel):
+    model_config = {
+        "protected_namespaces": ()
+    }
+    id: str
+    model_name: str
+    battery_type: str
+    serial_number: str
+    status: str
+    purchase_date: Optional[str] = None
+    shop_source: Optional[str] = None
+    shop_purchase_id: Optional[str] = None
+    customer_battery_id: Optional[str] = None
+    created_at: str
+    updated_at: str
+
+    @classmethod
+    def from_row(cls, row: dict) -> "BatteryUnitResponse":
+        return cls(
+            id=str(row["id"]),
+            model_name=row["model_name"],
+            battery_type=row["battery_type"],
+            serial_number=row["serial_number"],
+            status=row["status"],
+            purchase_date=str(row["purchase_date"]) if row.get("purchase_date") else None,
+            shop_source=row.get("shop_source"),
+            shop_purchase_id=str(row["shop_purchase_id"]) if row.get("shop_purchase_id") else None,
+            customer_battery_id=str(row["customer_battery_id"]) if row.get("customer_battery_id") else None,
+            created_at=str(row.get("created_at", "")),
+            updated_at=str(row.get("updated_at", "")),
+        )
+

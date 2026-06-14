@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import 'package:dio/dio.dart';
 
 import '../../providers/shop_provider.dart';
+import '../../providers/stock_provider.dart';
+import '../../models/stock.dart';
 import '../../widgets/app_scaffold.dart';
 import '../../widgets/app_button.dart';
 import '../../widgets/app_input.dart';
@@ -26,7 +28,7 @@ class _ShopPurchaseFormScreenState extends ConsumerState<ShopPurchaseFormScreen>
   final _formKey = GlobalKey<FormState>();
 
   String? _selectedBatteryModel;
-  final _serialNumberController = TextEditingController();
+  final List<TextEditingController> _serialControllers = [TextEditingController()];
   final _invoiceNumberController = TextEditingController();
   final _quantityController = TextEditingController(text: '1');
   final _amountController = TextEditingController();
@@ -39,8 +41,34 @@ class _ShopPurchaseFormScreenState extends ConsumerState<ShopPurchaseFormScreen>
   String? _errorMessage;
 
   @override
+  void initState() {
+    super.initState();
+    _quantityController.addListener(_onQuantityChanged);
+  }
+
+  void _onQuantityChanged() {
+    final qty = int.tryParse(_quantityController.text.trim()) ?? 1;
+    if (qty <= 0) return;
+    if (_serialControllers.length == qty) return;
+    setState(() {
+      if (_serialControllers.length < qty) {
+        while (_serialControllers.length < qty) {
+          _serialControllers.add(TextEditingController());
+        }
+      } else {
+        while (_serialControllers.length > qty) {
+          final controller = _serialControllers.removeLast();
+          controller.dispose();
+        }
+      }
+    });
+  }
+
+  @override
   void dispose() {
-    _serialNumberController.dispose();
+    for (final c in _serialControllers) {
+      c.dispose();
+    }
     _invoiceNumberController.dispose();
     _quantityController.dispose();
     _amountController.dispose();
@@ -87,9 +115,17 @@ class _ShopPurchaseFormScreenState extends ConsumerState<ShopPurchaseFormScreen>
       _errorMessage = null;
     });
 
+    final serials = _serialControllers.map((c) => c.text.trim().toUpperCase()).toList();
+    if (serials.toSet().length != serials.length) {
+      setState(() {
+        _errorMessage = 'Duplicate serial numbers are not allowed';
+      });
+      return;
+    }
+
     final payload = {
       'battery_model': _selectedBatteryModel,
-      'serial_number': _serialNumberController.text.trim(),
+      'serial_numbers': serials,
       'invoice_number': _invoiceNumberController.text.trim(),
       'quantity': int.tryParse(_quantityController.text.trim()) ?? 1,
       'purchase_date': DateFormat('yyyy-MM-dd').format(_purchaseDate),
@@ -275,16 +311,59 @@ class _ShopPurchaseFormScreenState extends ConsumerState<ShopPurchaseFormScreen>
                               ),
                               const SizedBox(height: 20),
 
-                              AppInput(
-                                controller: _serialNumberController,
-                                labelText: 'Battery Serial Number *',
-                                hintText: 'Enter mandatory unique serial code',
-                                prefixIcon: Icons.qr_code_rounded,
-                                textCapitalization: TextCapitalization.characters,
-                                validator: (v) => (v == null || v.trim().isEmpty)
-                                    ? 'Battery serial number is required'
-                                    : null,
+                              const Text(
+                                'Serial Numbers *',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                               ),
+                              const SizedBox(height: 10),
+                              ...List.generate(_serialControllers.length, (index) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 12.0),
+                                  child: Autocomplete<String>(
+                                    optionsBuilder: (TextEditingValue textEditingValue) {
+                                      final cleanText = textEditingValue.text.trim().toLowerCase();
+                                      List<String> serialOptions = [];
+                                      if (_selectedBatteryModel != null && stockModelsAsync.value != null) {
+                                        final matchedList = stockModelsAsync.value!.where((item) => item.modelName.toUpperCase() == _selectedBatteryModel!.trim().toUpperCase()).toList();
+                                        if (matchedList.isNotEmpty) {
+                                          final matchedStockItem = matchedList.first;
+                                          final unitsAsync = ref.watch(stockUnitsProvider(matchedStockItem.id));
+                                          if (unitsAsync is AsyncData<List<BatteryUnit>>) {
+                                            serialOptions = unitsAsync.value.map((u) => u.serialNumber).toList();
+                                          }
+                                        }
+                                      }
+                                      return serialOptions.where((s) => s.toLowerCase().contains(cleanText));
+                                    },
+                                    onSelected: (String selection) {
+                                      _serialControllers[index].text = selection;
+                                    },
+                                    fieldViewBuilder: (context, textEditingController, focusNode, onFieldSubmitted) {
+                                      if (textEditingController.text != _serialControllers[index].text) {
+                                        textEditingController.text = _serialControllers[index].text;
+                                      }
+                                      textEditingController.addListener(() {
+                                        _serialControllers[index].text = textEditingController.text;
+                                      });
+                                      return TextFormField(
+                                        controller: textEditingController,
+                                        focusNode: focusNode,
+                                        decoration: InputDecoration(
+                                          labelText: 'Serial Number ${index + 1} *',
+                                          prefixIcon: const Icon(Icons.qr_code_rounded),
+                                        ),
+                                        textCapitalization: TextCapitalization.characters,
+                                        validator: (v) {
+                                          if (v == null || v.trim().isEmpty) {
+                                            return 'Required';
+                                          }
+                                          return null;
+                                        },
+                                      );
+                                    },
+                                  ),
+                                );
+                              }),
                               const SizedBox(height: 20),
 
                               AppInput(
